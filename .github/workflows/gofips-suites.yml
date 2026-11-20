@@ -190,6 +190,14 @@ jobs:
           done
           [ "$(grep -c 'TLS12: ALL PASS' /tmp/gofips-tls12.log)" = 2 ]
 
+      # The node images ship OpenSSL 3.6.5 beside 4.0.3, both loading the
+      # same gofips.so: run in the pinned Wolfi container that has both.
+      - name: OpenSSL 3 and 4 in one process (dual_openssl)
+        run: |
+          set -o pipefail
+          ./providers/gofips/testdata/run-dual-openssl.sh ${SHIPPED_SO:+"$SHIPPED_SO"} 2>&1 | tee /tmp/gofips-dual-openssl.log
+          grep -q '^DUALOPENSSL: ALL PASS$' /tmp/gofips-dual-openssl.log
+
       - name: GCM nonce lifecycle (record counter, copies, no caps, concurrency)
         run: |
           set -o pipefail
@@ -347,6 +355,7 @@ jobs:
             /tmp/gofips-sha3-pbkdf2.log
             /tmp/gofips-rsa-p384.log
             /tmp/gofips-tls12.log
+            /tmp/gofips-dual-openssl.log
             /tmp/gofips-oe.txt
             /tmp/gofips-shipped.txt
             /tmp/gofips-bench.log

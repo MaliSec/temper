@@ -64,6 +64,36 @@ salt. The early secret matches the RFC 8446 value; the run prints it in
 conf on both ABIs. The digest matches the pinned DER hash on both, 8
 Go-dispatch lines per ABI prove routing, MD5 is unfetchable (E-28).
 
+## OpenSSL 3 and 4 in one process
+
+The node images ship OpenSSL 3.6.5 beside 4.0.3: Node links
+libcrypto.so.4, and native modules built for OpenSSL 3 (Prisma's engines)
+link libcrypto.so.3. Both read the same config and load the same
+`gofips.so`. `dual_openssl.c` (E-44) loads both libraries in one process,
+each with the config the images ship, and checks that each has gofips,
+cannot use MD5, gets every digest it serves from gofips, loads PEM keys,
+and stays correct with 4 threads per library interleaved.
+
+## Base provider digests
+
+Wolfi's OpenSSL 3.6 build patches its base provider to also serve SHA-1
+and MD5 (`provider=base`); upstream's base, and Wolfi's OpenSSL 4, serve
+no digests. With base active, as the config needs it for its encoders and
+decoders, those names would resolve to base, outside the module. Two
+measures keep them in gofips:
+
+- The config prefers gofips: `default_properties = ?provider=gofips`. An
+  optional preference, so a name only base serves (its encoders, decoders
+  and store loaders) still resolves there; SHA-1 resolves to gofips's.
+- On an OpenSSL 3 core (read from the core's version at provider init),
+  gofips also registers MD5 as a refused row: a fetch resolves to it and
+  every entry point fails. On OpenSSL 4 the row is not registered.
+
+`config_pref.c` (E-45) checks both on OpenSSL 3.0.13, 3.5.7, 3.6.5 and
+4.0.3 with the config the images ship. An application that names another
+provider in its own property query (`provider=base`) chooses it; that is
+outside the claim, like loading another provider.
+
 ## CI status
 
 The `gofips-provider-suites` job (E-29), on amd64 and arm64, runs:
@@ -73,6 +103,7 @@ The `gofips-provider-suites` job (E-29), on amd64 and arm64, runs:
 - the Node integration and fail-closed runner;
 - the cross-provider interop regressions and the RFC 8446 KAT;
 - the X509 digest probe on both ABIs;
+- OpenSSL 3 and 4 in one process (E-44);
 - the differential suite (T1 to T13), regtest and guardtest;
 - SHA-3, PBKDF2 and streaming ECDSA; RSA verification, P-384 and
   certificate chains; TLS 1.2; the GCM nonce lifecycle and caller

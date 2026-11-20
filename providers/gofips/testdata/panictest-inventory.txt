@@ -147,6 +147,8 @@ mac: 12 exports
   gofips_mac_set_ctx_params
   gofips_mac_settable_ctx_params
   gofips_mac_update
+other:gofips_md5_refuse_get_params: 1 exports
+  gofips_md5_refuse_get_params
 other:gofips_tls_caps_c: 1 exports
   gofips_tls_caps_c
 pbkdf2: 9 exports

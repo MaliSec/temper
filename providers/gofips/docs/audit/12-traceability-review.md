@@ -21,6 +21,8 @@ last_updated: 2026-11-19
 | Differential T1-T13, 0 defects (06) | differential-run.log | E-30 |
 | Build/mode matrix, release-binary runtime-silence scan (05) | mode-matrix-run.log | E-33 |
 | Same .so on OpenSSL 3.x and 4.x (01, 04) | readelf + verified loads | E-23, E-01, E-14 |
+| OpenSSL 3 and 4 in one process share one .so; every digest from gofips (04) | dual_openssl.c | E-44 |
+| SHA-1 and MD5 resolve to gofips although Wolfi's OpenSSL 3.6 base serves them (06) | config_pref.c | E-45 |
 | X509_digest via gofips, both ABIs (03, 06) | probe + CI | E-28, E-29 |
 | CI runs the full suite set on pull requests and pushes to main | workflow job | E-29 |
 | SSL_CTX_new with valid and invalid module paths (05) | path repro | E-27 |

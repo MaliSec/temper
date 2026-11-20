@@ -39,9 +39,10 @@ different toolchain or environment differs.
 - The provider object has zero libcrypto-namespaced undefined symbols
   (`nm -D --undefined-only`); its only `DT_NEEDED` is `libc.so.6` (E-23).
   No libcrypto link, so one object serves OpenSSL 3.x and 4.x.
-- Verified loads: OpenSSL 3.0.13, 3.5.7 and 4.0.3 (E-38), the Temper node
-  image's OpenSSL 4.0.3 (libcrypto.so.4, E-14) and the compat pair's
-  OpenSSL 3.5.9 (libcrypto.so.3, E-01).
+- Verified loads: OpenSSL 3.0.13, 3.5.7, 3.6.5 and 4.0.3 (E-38), the
+  Temper node image's OpenSSL 4.0.3 (libcrypto.so.4, E-14), the compat
+  pair's OpenSSL 3.5.9 (libcrypto.so.3, E-01), and OpenSSL 3.6.5 and 4.0.3
+  in one process sharing one `gofips.so` (E-44).
 
 ## Compat pair provenance and hashes
 

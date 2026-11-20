@@ -51,14 +51,22 @@ int main(int argc, char **argv) {
     printf("PASS: digest matches expected value\n");
 
     /* Exclusivity is tested by fetch, not OSSL_PROVIDER_load("default"),
-     * which would activate the built-in provider. MD5 exists only in
-     * default/legacy. */
+     * which would activate the built-in provider. No provider but gofips
+     * may answer for MD5: on OpenSSL 3 gofips's refused MD5 row does, and
+     * every use fails; on OpenSSL 4 nothing does. */
     EVP_MD *md5 = EVP_MD_fetch(NULL, "MD5", NULL);
     if (md5) {
-        printf("FAIL: MD5 fetchable (default/legacy provider present, exclusivity violated)\n");
-        return 1;
+        const char *by = OSSL_PROVIDER_get0_name(EVP_MD_get0_provider(md5));
+        EVP_MD_CTX *mc = EVP_MD_CTX_new();
+        int usable = mc && EVP_DigestInit_ex(mc, md5, NULL);
+        EVP_MD_CTX_free(mc);
+        EVP_MD_free(md5);
+        if (!by || strcmp(by, "gofips") != 0 || usable) {
+            printf("FAIL: MD5 served by %s (exclusivity violated)\n", by ? by : "?");
+            return 1;
+        }
     }
-    printf("PASS: MD5 not fetchable (default/legacy absent)\n");
+    printf("PASS: MD5 is not served (no provider but gofips answers, and it refuses)\n");
     EVP_MD *sha256 = EVP_MD_fetch(NULL, "SHA256", NULL);
     if (!sha256) {
         printf("FAIL: SHA256 not fetchable (gofips not serving digests)\n");

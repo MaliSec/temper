@@ -11,7 +11,7 @@ last_updated: 2026-11-19
 | OpenSSL consumer | 3.x or 4.x, provider loaded via OPENSSL_CONF | E-01, E-14 |
 | Go runtime | Built with `GOFIPS140=v1.0.0` from the frozen archive | E-08 |
 | Runtime mode | `GODEBUG=fips140=on` (build default; gate-enforced) | E-09, E-13 |
-| Providers in config | gofips + base only; no default, no legacy | E-05, E-06 |
+| Providers in config | gofips + base only, gofips preferred (`?provider=gofips`); no default, no legacy | E-05, E-06, E-45 |
 | TLS version | 1.3, and 1.2 with the extended master secret; records through the module's TLS 1.3 and TLS 1.2 GCM (page 03) | E-37, E-42 |
 | TLS ciphers | TLS 1.3: TLS_AES_256_GCM_SHA384, TLS_AES_128_GCM_SHA256. TLS 1.2: ECDHE-ECDSA and ECDHE-RSA with AES-128-GCM or AES-256-GCM | E-03, E-17, E-42 |
 | Key exchange | P-256, P-384 | E-13 (N7), E-40 |
@@ -21,7 +21,8 @@ last_updated: 2026-11-19
 ## Required environment and config
 
 - `OPENSSL_CONF` pointing at a gofips-only conf (module path plus
-  `activate = 1`; base provider activated).
+  `activate = 1`; base provider activated; `default_properties =
+  ?provider=gofips` in its algorithm section), as `openssl-gofips.cnf`.
 - `GODEBUG=fips140=on` on every process.
 - Applications that need SHA-1 for non-security identifiers get it as a
   labelled non-approved digest (page 03). It works under `fips140=on`

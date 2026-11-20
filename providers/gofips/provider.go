@@ -40,6 +40,8 @@ package main
 // extern const OSSL_PARAM gofips_ec_keymgmt_params[6];
 // extern int gofips_call_param_cb(OSSL_CALLBACK* cb, void* cbarg, const OSSL_PARAM params[]);
 // extern int gofips_build_ec_export_params(OSSL_PARAM out[], const char* group, const unsigned char* pub, size_t publen, const unsigned char* priv, size_t privlen);
+// extern const OSSL_ALGORITHM *gofips_digest_table(int ossl3);
+// extern int gofips_core_is_ossl3(const OSSL_CORE_HANDLE *handle, const OSSL_DISPATCH *in);
 import "C"
 
 import (
@@ -280,14 +282,26 @@ func OSSL_provider_init(
 	}
 	if provctx != nil {
 		// Opaque, non-nil provider context; the core passes it back to every
-		// provider-level function. No per-provider state in the slice.
-		*provctx = (*C.OSSL_CORE_HANDLE)(unsafe.Pointer(&provCtxSentinel))
+		// provider-level function. It records only the core's major
+		// version, which selects the digest table (query_operation). One
+		// gofips.so loaded by OpenSSL 3 and 4 in one process gets one
+		// context per core.
+		ctx := &provCtx4
+		if C.gofips_core_is_ossl3(handle, in) != 0 {
+			ctx = &provCtx3
+		}
+		*provctx = (*C.OSSL_CORE_HANDLE)(unsafe.Pointer(ctx))
 	}
 	dbg("init returning 1")
 	return 1
 }
 
-var provCtxSentinel byte
+var provCtx3, provCtx4 byte
+
+// coreIsOSSL3: the provider context was created by an OpenSSL 3 core.
+func coreIsOSSL3(provctx *C.void) bool {
+	return unsafe.Pointer(provctx) == unsafe.Pointer(&provCtx3)
+}
 
 // ---- provider-level functions (OSSL_FUNC_PROVIDER_* ≥1024) ----
 
@@ -438,7 +452,11 @@ func gofips_query_operation(provctx *C.void, operationID C.int, noStore *C.int) 
 	}
 	switch operationID {
 	case C.OSSL_OP_DIGEST:
-		return (*C.OSSL_ALGORITHM)(unsafe.Pointer(&C.gofips_digest_algorithms[0]))
+		ossl3 := C.int(0)
+		if coreIsOSSL3(provctx) {
+			ossl3 = 1
+		}
+		return C.gofips_digest_table(ossl3)
 	case C.OSSL_OP_RAND:
 		return (*C.OSSL_ALGORITHM)(unsafe.Pointer(&C.gofips_rand_algorithms[0]))
 	case C.OSSL_OP_MAC:
@@ -457,6 +475,17 @@ func gofips_query_operation(provctx *C.void, operationID C.int, noStore *C.int) 
 		return (*C.OSSL_ALGORITHM)(unsafe.Pointer(&C.gofips_sig_algorithms[0]))
 	}
 	return nil
+}
+
+//export gofips_md5_refuse_get_params
+func gofips_md5_refuse_get_params(params *C.OSSL_PARAM) C.int {
+	// The refused MD5 row's sizes, so a fetch completes and resolves to
+	// gofips; every other entry point of the row fails (dispatch.c).
+	return opGuard(func() C.int { return md5_refuse_get_paramsOp(params) })
+}
+
+func md5_refuse_get_paramsOp(params *C.OSSL_PARAM) C.int {
+	return digestParams(params, 16, 64)
 }
 
 //export gofips_unquery_operation

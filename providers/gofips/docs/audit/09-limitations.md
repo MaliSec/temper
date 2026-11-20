@@ -43,7 +43,8 @@ last_updated: 2026-11-19
 - SHA-1 is served outside the validated module and is not approved. A
   consumer that needs SHA-1 cannot run under `GODEBUG=fips140=only`,
   because Go refuses SHA-1 there.
-- MD5 stays unregistered. Applications that call MD5 through Node's
+- MD5 is never served: unregistered under OpenSSL 4, and a refused row
+  under OpenSSL 3 (page 06). Applications that call MD5 through Node's
   crypto fail on that call.
 
 ## RSA, P-384, PBKDF2 and SHA-3
@@ -68,8 +69,8 @@ last_updated: 2026-11-19
   (E-42).
 - With OpenSSL 3.0 under `GODEBUG=fips140=only`, certificate chains do not
   verify: Go refuses SHA-1, libcrypto then has no certificate fingerprints,
-  and OpenSSL 3.0.13 builds no chain without them. OpenSSL 3.5.7 and 4.0.3
-  do (E-38, note 3). The supported configuration (`fips140=on`) is not
+  and OpenSSL 3.0.13 builds no chain without them. OpenSSL 3.5.7, 3.6.5 and
+  4.0.3 do (E-38, note 3). The supported configuration (`fips140=on`) is not
   affected.
 - OpenSSL's deprecated `HMAC_CTX` API composes HMAC in libcrypto from
   digest calls, outside the module, without the provider's key floor.

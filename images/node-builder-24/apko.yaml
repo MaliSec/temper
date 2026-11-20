@@ -15,6 +15,9 @@ contents:
     - wolfi-baselayout
     - ca-certificates-bundle
     - nodejs-24
+    # OpenSSL 3, for native modules built against libssl.so.3 (Prisma's engines).
+    - openssl-3.6-libssl
+    - openssl-3.6-libcrypto
     - npm
     - busybox
 

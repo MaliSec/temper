@@ -4,7 +4,10 @@
 # gofips is the only provider with cryptographic algorithms; base adds
 # encoders and decoders, needed to load PEM keys and certificates. The
 # default and legacy providers are not loaded, so every crypto fetch
-# resolves to gofips or fails. This is the configuration the audit pack's
+# resolves to gofips or fails. Fetches prefer gofips (default_properties):
+# Wolfi's OpenSSL 3.6 base provider also serves SHA-1 and MD5, and the
+# preference resolves those names to gofips, which serves SHA-1 and
+# refuses MD5. This is the configuration the audit pack's
 # evidence covers (docs/audit/08-operating-guide.md); keep its effective
 # lines identical to testdata/node-integration/openssl-gofips.cnf.
 
@@ -12,6 +15,10 @@ openssl_conf = openssl_init
 
 [openssl_init]
 providers = provider_sect
+alg_section = algorithm_sect
+
+[algorithm_sect]
+default_properties = ?provider=gofips
 
 [provider_sect]
 gofips = gofips_sect
