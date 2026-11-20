@@ -273,7 +273,7 @@ jobs:
           ln -sf libcrypto.so.3 /tmp/compat-openssl3-audreg/libcrypto.so
           ln -sf libssl.so.3 /tmp/compat-openssl3-audreg/libssl.so
           cc -o /tmp/audreg-compat providers/gofips/testdata/audreg.c \
-            -I/usr/include -L/tmp/compat-openssl3-audreg -lcrypto -ldl -lpthread \
+            -I/usr/include -L/tmp/compat-openssl3-audreg -lssl -lcrypto -ldl -lpthread \
             -Wl,--disable-new-dtags -Wl,-rpath,/tmp/compat-openssl3-audreg
           GODEBUG=fips140=on timeout 120 /tmp/audreg-compat /tmp/modematrix \
             2>&1 | tee /tmp/gofips-audreg-compat.log | grep -q "ALL PASS"

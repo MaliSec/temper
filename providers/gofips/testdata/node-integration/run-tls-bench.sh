@@ -62,6 +62,9 @@ echo "=== DEFAULT-PROVIDER CONTROL benchmark ==="
 CONTROL_OUT=$(run_bench "default-provider control" "" | tee /dev/stderr | grep 'BENCH-JSON ' | tail -1 || true)
 
 echo
+echo "$GOFIPS_OUT"
+echo "$CONTROL_OUT"
+echo
 echo "=== Summary (medians across rounds) ==="
 python3 - <<PYEOF
 import json, sys
