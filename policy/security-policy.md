@@ -78,10 +78,11 @@ None of them is a production runtime base image.
 
 ## 4. Patch cadence and release records
 
-1. **Rebuild cadence.** A scheduled workflow (`temper-relock`) relocks every
-   image against the newest Wolfi packages and opens a pull request with
-   the changes. Merging it and pushing a date tag releases the rebuilt
-   images.
+1. **Rebuild cadence.** Every night a scheduled workflow (`temper-nightly`)
+   relocks every image against the newest Wolfi packages, merges the
+   relock once its required checks pass, and tags `main`, which releases
+   the rebuilt images. If the relock fails its checks, that night's
+   release is cut from `main` without it.
 2. **Release records.** Every release writes a signed manifest, attached to
    the GitHub release, that records the git commit, the signing mode, the
    scanner database freshness and, per image, the digest and scan results.

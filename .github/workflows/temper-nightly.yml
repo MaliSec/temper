@@ -1,0 +1,229 @@
+# temper-nightly: relock every image against Wolfi, merge the relock once
+# its required checks pass, then tag main with the date, which releases it
+# (temper-release). A release is cut every night, with or without package
+# changes.
+#
+# Pushes, the merge and the tag use the temper release App's token: pushes
+# made with the workflow token do not trigger other workflows. The App's
+# key is in the `nightly` environment, which only main can deploy to, and
+# the App is the tag ruleset's only automated bypass.
+name: temper-nightly
+
+on:
+  schedule:
+    - cron: '17 2 * * *'   # daily, 02:17 UTC
+  workflow_dispatch:
+    inputs:
+      image:
+        description: 'Image to relock (glob, e.g. node); empty relocks all'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: temper-nightly
+  cancel-in-progress: false
+
+jobs:
+  # The -fips images lock against the @local repo, for both architectures.
+  packages:
+    name: Packages (${{ matrix.arch }})
+    if: github.ref == 'refs/heads/main'
+    strategy:
+      matrix:
+        include:
+          - { arch: x86_64, runner: ubuntu-24.04 }
+          - { arch: aarch64, runner: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.runner }}
+    env:
+      MELANGE_RUNNER: docker
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install apko and melange
+        run: |
+          TOOLS="apko melange" ./scripts/install-tools.sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Build packages
+        run: ./scripts/build.sh --packages --arch "${{ matrix.arch }}"
+      - name: Upload packages
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: relock-packages-${{ matrix.arch }}
+          path: packages/${{ matrix.arch }}/*.apk
+          if-no-files-found: error
+          retention-days: 1
+
+  relock:
+    needs: packages
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    environment: nightly
+    outputs:
+      changed: ${{ steps.diff.outputs.changed }}
+    env:
+      BRANCH: relock/automated
+    steps:
+      - name: App token
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ vars.TEMPER_APP_ID }}
+          private-key: ${{ secrets.TEMPER_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          token: ${{ steps.app.outputs.token }}
+      - name: Install apko and melange
+        run: |
+          TOOLS="apko melange" ./scripts/install-tools.sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Download packages (both architectures)
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: relock-packages-*
+          path: pkg-artifacts
+      - name: Index packages
+        run: |
+          set -euo pipefail
+          for a in x86_64 aarch64; do
+            mkdir -p "packages/$a"
+            cp "pkg-artifacts/relock-packages-$a/"*.apk "packages/$a/"
+          done
+          ./scripts/build.sh --index
+      - name: Relock
+        env:
+          IMAGE: ${{ inputs.image }}
+        run: ./scripts/build.sh --lock ${IMAGE:+--image "$IMAGE"}
+      - name: Package diff
+        id: diff
+        run: |
+          set -euo pipefail
+          ./scripts/lock-diff.sh > /tmp/lock-diff.md
+          cat /tmp/lock-diff.md
+          if grep -q '^No package changes' /tmp/lock-diff.md; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      # A push with the App's token runs temper-build on the PR.
+      - name: Open or update the relock PR
+        if: steps.diff.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
+        run: |
+          set -euo pipefail
+          bot="${APP_SLUG}[bot]"
+          botmail="$(gh api "users/${bot}" --jq .id)+${bot}@users.noreply.github.com"
+          git config user.name "$bot"
+          git config user.email "$botmail"
+          git checkout -B "$BRANCH"
+          git add images/
+          git commit -q -m "Relock images against Wolfi ($(date -u +%Y-%m-%d))" \
+            -m "Signed-off-by: $bot <$botmail>"
+          git push -q --force origin "$BRANCH"
+
+          {
+            echo "Nightly relock: package versions Wolfi now resolves for the committed configs."
+            echo
+            cat /tmp/lock-diff.md
+          } > /tmp/pr-body.md
+
+          if gh pr view "$BRANCH" --json state -q .state 2>/dev/null | grep -qx OPEN; then
+            gh pr edit "$BRANCH" --body-file /tmp/pr-body.md
+          else
+            gh pr create --head "$BRANCH" --title "Relock images against Wolfi" --body-file /tmp/pr-body.md
+          fi
+
+  release:
+    needs: relock
+    if: always() && github.ref == 'refs/heads/main' && needs.relock.result != 'cancelled'
+    runs-on: ubuntu-24.04
+    environment: nightly
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
+    env:
+      BRANCH: relock/automated
+      REPO: ${{ github.repository }}
+    steps:
+      # The relock merges only when every required check on its head
+      # passes. If it fails, tonight's release is cut from main as it is.
+      - name: Wait for the relock checks
+        id: checks
+        if: needs.relock.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          head=$(gh pr view "$BRANCH" -R "$REPO" --json headRefOid -q .headRefOid)
+          echo "head=$head" >> "$GITHUB_OUTPUT"
+          mapfile -t req < <(gh api "repos/$REPO/rules/branches/main" \
+            --jq '.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context')
+          [ "${#req[@]}" -gt 0 ] || { echo "::error::main has no required checks" >&2; exit 1; }
+          # Every required check must report; jobs that wait on others
+          # appear only once those finish.
+          result=timeout
+          for _ in $(seq 90); do
+            checks=$(gh pr checks "$BRANCH" -R "$REPO" --json name,bucket 2>/dev/null || echo '[]')
+            state=pass
+            for c in "${req[@]}"; do
+              b=$(jq -r --arg n "$c" '[.[] | select(.name == $n) | .bucket] | if length == 0 then "missing" else .[0] end' <<<"$checks")
+              case "$b" in
+                pass) ;;
+                fail|cancel|skipping) state=fail; echo "$c: $b" ;;
+                *) [ "$state" = fail ] || state="wait" ;;
+              esac
+            done
+            if [ "$state" != "wait" ]; then result=$state; break; fi
+            sleep 60
+          done
+          if [ "$result" = pass ]; then
+            echo "passed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::relock checks did not pass ($result); releasing main without the relock"
+            echo "passed=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: App token
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ vars.TEMPER_APP_ID }}
+          private-key: ${{ secrets.TEMPER_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Merge the relock
+        if: steps.checks.outputs.passed == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          HEAD: ${{ steps.checks.outputs.head }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
+        run: |
+          set -euo pipefail
+          bot="${APP_SLUG}[bot]"
+          botmail="$(gh api "users/${bot}" --jq .id)+${bot}@users.noreply.github.com"
+          gh pr merge "$BRANCH" -R "$REPO" --squash --delete-branch --match-head-commit "$HEAD" \
+            --subject "Relock images against Wolfi ($(date -u +%Y-%m-%d))" \
+            --body "Signed-off-by: $bot <$botmail>"
+      # Today's date, or the next .N if today already has a release.
+      - name: Tag main
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -euo pipefail
+          sha=$(gh api "repos/$REPO/commits/main" --jq .sha)
+          day=$(date -u +%Y.%m.%d)
+          tag=$day
+          n=0
+          while gh api "repos/$REPO/git/ref/tags/$tag" >/dev/null 2>&1; do
+            n=$((n + 1)); tag="$day.$n"
+          done
+          gh api "repos/$REPO/git/refs" -f ref="refs/tags/$tag" -f sha="$sha" >/dev/null
+          echo "tagged $tag at $sha"

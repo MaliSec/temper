@@ -52,15 +52,15 @@ Builds and releases use only the lockfile. The packages built here
 reproduces the package the `-fips` lockfiles pin; bump those pins, then
 relock, to move them to a newer toolchain.
 
-- **Automatic:** the `temper-relock` workflow relocks every Monday and opens
+- **Automatic:** the `temper-nightly` workflow relocks every night, opens
   (or updates) one pull request, `relock/automated`, with the package diff,
-  then runs `temper-build` on it. Run it by hand from the Actions tab, with
-  an optional image name.
+  merges it once its required checks pass, and releases `main`. Run it by
+  hand from the Actions tab, with an optional image name.
 - **By hand:** `make lock IMAGE=node`, then `./scripts/lock-diff.sh` to see
   what moved. An image and its `-fips` variant always relock together.
   Images that use the `@local` repo lock against the packages built on the
   CI runners: a package records its directory sizes, which depend on the
-  build filesystem. Relock them with `temper-relock`.
+  build filesystem. Relock them with `temper-nightly`.
 - **Version lines:** `images/<name>` is the newest line of a repository;
   an older line is `images/<name>-<line>` (`images/node-24`) with a `repo`
   file naming the repository (`node`). It gets `<line>` and `<line>-<date>`
@@ -84,9 +84,8 @@ attaches it as an attested bundle (`providers/gofips/docs/audit`, page
 
 The release adds the line tags itself: an image's line comes from its
 package stream (`scripts/image-line.sh`; `images/<name>/line` overrides
-it). For an urgent fix, run `temper-relock` by hand for the affected
-image, merge its pull request once CI passes, then tag
-(docs/maintaining.md).
+it). For an urgent fix, run `temper-nightly` by hand for the affected
+image; it merges the relock once CI passes and releases.
 
 ## What belongs here
 

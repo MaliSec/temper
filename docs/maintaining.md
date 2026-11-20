@@ -4,7 +4,8 @@ How to cut a release.
 
 ## Cutting a release
 
-Push a date tag on a commit on `main`:
+`temper-nightly` releases `main` every night (02:17 UTC). To release by
+hand, push a date tag on a commit on `main`:
 
 ```sh
 git tag -s 2026.11.19 -m "Temper 2026.11.19"
