@@ -265,8 +265,8 @@ publish() {
     digest=$(jq -r .digest <<<"$rec")
     ref="${REGISTRY}/${IMAGE_REPO}/$(image_repo "$name")"
     echo "    $name → $ref@$digest"
-    crane copy "$STAGE/$name@$digest" "${ref}@${digest}" >/dev/null 2>&1 \
-      || { echo "crane copy failed: $name → ${ref}@${digest}" >&2; crane copy "$STAGE/$name@$digest" "${ref}@${digest}" 2>&1 | tail -5 >&2; exit 1; }
+    reg crane copy "$STAGE/$name@$digest" "${ref}@${digest}" \
+      || { echo "crane copy failed: $name → ${ref}@${digest}" >&2; exit 1; }
     [ "$(crane digest "${ref}@${digest}")" = "$digest" ] || { echo "$name: published digest differs from the staged one" >&2; exit 1; }
     line=$(./scripts/image-line.sh "$name")
     primary=$([ "$(image_repo "$name")" = "$name" ] && echo true || echo false)
@@ -312,6 +312,20 @@ start_staging() {
 # image_repo <image>: the repository an image directory publishes to. An
 # older version line (images/node-24) names its repository in a repo file
 # (node); without one, the repository is the directory name.
+# reg CMD...: run a registry write, retrying transient errors (a new
+# package's first pushes can fail); prints the last error on failure. Every
+# write here is by digest or to a fixed tag, so a retry repeats it exactly.
+reg() {
+  local attempt err
+  for attempt in 1 2 3; do
+    if err=$("$@" 2>&1); then return 0; fi
+    echo "attempt $attempt of 3 failed: $*" >&2
+    printf '%s\n' "$err" | tail -5 | sed 's/^/      /' >&2
+    [ "$attempt" = 3 ] || sleep $((attempt * 15))
+  done
+  return 1
+}
+
 image_repo() {
   if [ -f "images/$1/repo" ]; then tr -d '[:space:]' < "images/$1/repo"; else printf '%s' "$1"; fi
 }
@@ -346,7 +360,7 @@ tag_once() {
     return
   fi
   require_tag_absent "${repo}:${t}"
-  crane tag "${repo}@${digest}" "$t" || { echo "crane tag failed: ${repo}@${digest} as $t" >&2; exit 1; }
+  reg crane tag "${repo}@${digest}" "$t" || { echo "crane tag failed: ${repo}@${digest} as $t" >&2; exit 1; }
 }
 
 # ---------------------------------------------------------------------------
@@ -408,7 +422,7 @@ finalize() {
   done < <(jq -r '.images[] | select(.primary) | .repository' "$IMAGES_JSON")
   if [[ "$LATEST_NOTE" == "advanced to ${DATE}" ]] && jq -e '[.images[] | select(.primary)] | length > 0' "$IMAGES_JSON" >/dev/null; then
     jq -r '.images[] | select(.primary) | "\(.repository)@\(.digest)"' "$IMAGES_JSON" | while read -r pinned; do
-      crane tag "$pinned" latest || { echo "crane tag latest failed: $pinned" >&2; exit 1; }
+      reg crane tag "$pinned" latest || { echo "crane tag latest failed: $pinned" >&2; exit 1; }
     done
   fi
   echo "    latest: $LATEST_NOTE"
@@ -421,7 +435,7 @@ finalize() {
     [ -n "$line" ] || continue
     newest=$(crane ls "$repo" | sed -n "s/^${line//./\\.}-//p" | ./scripts/newest-date-tag.sh)
     if [ "$newest" = "$DATE" ]; then
-      crane tag "${repo}@${digest}" "$line" || { echo "crane tag failed: ${repo}@${digest} as $line" >&2; exit 1; }
+      reg crane tag "${repo}@${digest}" "$line" || { echo "crane tag failed: ${repo}@${digest} as $line" >&2; exit 1; }
       note="advanced to ${line}-${DATE}"
     else
       note="not advanced: ${repo##*/} has newer release ${line}-${newest}"
