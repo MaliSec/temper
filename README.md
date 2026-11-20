@@ -8,6 +8,28 @@ Temper is free to use for your own workloads. It is open source under
 Apache-2.0. There is no paid tier, no support contract and no guaranteed
 patch time.
 
+## Quick start
+
+```sh
+docker pull ghcr.io/malisec/temper/node:26
+```
+
+Build in a builder image, ship on a runtime one:
+
+```dockerfile
+FROM ghcr.io/malisec/temper/go-builder:1.26 AS build
+WORKDIR /src
+COPY . .
+RUN CGO_ENABLED=0 go build -trimpath -o /tmp/app .
+
+FROM ghcr.io/malisec/temper/static:latest
+COPY --from=build /tmp/app /app
+ENTRYPOINT ["/app"]
+```
+
+For production, pin by digest and verify the image first
+([Verify an image](#verify-an-image)).
+
 ## Images
 
 | Image | Kind | For |
