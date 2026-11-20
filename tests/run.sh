@@ -404,6 +404,38 @@ grep -qF "'[0-9][0-9][0-9][0-9].[0-9][0-9].[0-9][0-9].[1-9]'" .github/workflows/
 grep -q 'newest-date-tag.sh' scripts/cut-registry.sh && grep -q 'crane tag "$pinned" latest' scripts/cut-registry.sh \
   && ok "the release moves latest only through the forward-only check" || fail "cut-registry does not gate latest"
 
+echo "== scans-json.sh: the release's findings match the gate's counts =="
+sj="$TMP/scans"; mkdir -p "$sj/scan"
+cat > "$sj/records.json" <<'EOF'
+{"scan_db": "grype DB built X", "scan_db_trivy": "trivy DB built Y", "images": [
+ {"name": "app", "digest": "sha256:aa", "platforms": [
+  {"arch": "amd64", "digest": "sha256:a1",
+   "vulns_grype": "critical=0 high=0 medium=1 low=0 negligible=1 unknown=0 kev=0",
+   "vulns_trivy": "critical=0 high=0 medium=1 low=0 unknown=0"}]}]}
+EOF
+cat > "$sj/scan/app.amd64.grype.json" <<'EOF'
+{"descriptor": {"version": "0.1"}, "matches": [
+ {"vulnerability": {"id": "CVE-1", "severity": "Medium", "fix": {"versions": ["1.1"], "state": "fixed"}},
+  "artifact": {"name": "pkg", "version": "1.0", "type": "apk", "purl": "pkg:apk/wolfi/pkg@1.0"}},
+ {"vulnerability": {"id": "CVE-2", "severity": "Negligible", "fix": {"versions": [], "state": ""}},
+  "artifact": {"name": "pkg", "version": "1.0", "type": "apk", "purl": "pkg:apk/wolfi/pkg@1.0"}}]}
+EOF
+cat > "$sj/scan/app.amd64.trivy.json" <<'EOF'
+{"Trivy": {"Version": "0.2"}, "Results": [{"Type": "wolfi", "Vulnerabilities": [
+ {"VulnerabilityID": "CVE-1", "Severity": "MEDIUM", "PkgName": "pkg", "InstalledVersion": "1.0", "FixedVersion": "1.1", "Status": "fixed"}]}]}
+EOF
+if out=$(./scripts/scans-json.sh "$sj/records.json" "$sj/scan" 2026.01.01 2>/dev/null) \
+   && [ "$(jq -c '[.release, .scanners.grype.version, (.images.app.platforms.amd64.grype | map(.id + ":" + .severity + ":" + .fix_state)),
+                   (.images.app.platforms.amd64.trivy | map(.id + ":" + (.fixed_in | join(","))))]' <<<"$out")" \
+        = '["2026.01.01","0.1",["CVE-1:medium:fixed","CVE-2:negligible:unknown"],["CVE-1:1.1"]]' ]; then
+  ok "scans-json normalizes both scanners' findings, negligible included"
+else fail "scans-json output is not the expected normalized findings"; fi
+sed -i 's/negligible=1/negligible=0/' "$sj/records.json"
+expect_fail "scans-json refuses findings that do not match the gate's counts" \
+  ./scripts/scans-json.sh "$sj/records.json" "$sj/scan" 2026.01.01
+grep -q 'negligible=$(gsev Negligible)' scripts/cut-registry.sh \
+  && ok "the gate's grype counts include negligible findings" || fail "cut-registry's grype counts leave out negligible"
+
 echo "== rollback-latest.sh: fail-closed interfaces =="
 expect_fail "rollback without a tag fails" ./scripts/rollback-latest.sh
 expect_fail "rollback with a malformed tag fails" ./scripts/rollback-latest.sh 2026.1.1

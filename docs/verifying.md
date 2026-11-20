@@ -151,6 +151,23 @@ grep -F 'digest: "sha256:<digest>"' temper-<date tag>.manifest.yaml
 
 `verify-build.sh --date <tag> --manifest <file>` does all of this.
 
+## Scan findings
+
+Each release also attaches `temper-<release>.scans.json`: every finding
+both scanners reported at release time, per image and platform, with the
+package, severity and fix state. The manifest counts them (`vulns_at_cut`,
+`vulns_trivy_at_cut`) and records the file's sha256 (`scans_sha256`), so
+the manifest's signature covers it:
+
+```sh
+gh release download <date tag> --repo MaliSec/temper \
+  --pattern 'temper-<date tag>.scans.json'
+grep -F "scans_sha256: \"$(sha256sum temper-<date tag>.scans.json | cut -d' ' -f1)\"" \
+  temper-<date tag>.manifest.yaml
+```
+
+The findings are as of the release; scanner databases change daily.
+
 ## The gofips evidence bundle
 
 Each release attaches `gofips-evidence-<release>.tar.gz`: the gofips

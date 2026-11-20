@@ -363,9 +363,10 @@ jobs:
         run: |
           set -euo pipefail
           m="dist/registry-cut/${DATE}/temper-${DATE}.manifest.yaml"
-          gh release create "$DATE" "$m" "${m}.sigstore.json" evidence/gofips-evidence-"${DATE}".tar.gz \
+          gh release create "$DATE" "$m" "${m}.sigstore.json" "dist/registry-cut/${DATE}/temper-${DATE}.scans.json" \
+            evidence/gofips-evidence-"${DATE}".tar.gz \
             --title "Temper ${DATE}" \
-            --notes "Images and digests are listed in the attached manifest; the gofips evidence bundle is attested. See docs/verifying.md."
+            --notes "Images and digests are listed in the attached manifest, and every scanner finding in the scans file, whose sha256 the manifest records. The gofips evidence bundle is attested. See docs/verifying.md."
 
       - name: Upload release records
         if: always()

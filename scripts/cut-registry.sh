@@ -187,7 +187,7 @@ scan_images() {
       # On CISA's Known Exploited Vulnerabilities list, at any severity.
       gkev() { jq '[.matches[]? | select((.vulnerability.knownExploited // []) | length > 0)] | length' "$base.grype.json"; }
       kev=$(gkev)
-      vulns_grype="critical=${crit} high=$(gsev High) medium=$(gsev Medium) low=$(gsev Low) unknown=$(gsev Unknown) kev=${kev}"
+      vulns_grype="critical=${crit} high=$(gsev High) medium=$(gsev Medium) low=$(gsev Low) negligible=$(gsev Negligible) unknown=$(gsev Unknown) kev=${kev}"
       echo "        grype: ${vulns_grype}"
       crit_total=$(( crit_total + tcrit + crit ))
       kev_total=$(( kev_total + kev ))
@@ -209,6 +209,12 @@ scan_images() {
         vulns_trivy: ([.[] | "\(.arch): \(.vulns_trivy)"] | join("; "))}')")
   done
 
+  # Every finding behind the gate's counts, for the release; the manifest
+  # records its sha256. Built here, so a mismatch stops the cut before
+  # anything is published.
+  printf '%s\n' "${records[@]}" | jq -s --arg scan_db "$DB_NOTE" --arg scan_db_trivy "$TRIVY_DB_NOTE" \
+    '{scan_db: $scan_db, scan_db_trivy: $scan_db_trivy, images: .}' > "$CUT_DIR/scan/records.json"
+  ./scripts/scans-json.sh "$CUT_DIR/scan/records.json" "$CUT_DIR/scan" "$DATE" > "$CUT_DIR/temper-${DATE}.scans.json"
 }
 
 publish() {
@@ -444,6 +450,10 @@ finalize() {
     LINE_NOTES=$(jq -c --arg r "$repo:$line" --arg n "$note" '. + {($r): $n}' <<<"$LINE_NOTES")
   done < <(jq -r '.images[] | "\(.repository) \(.digest) \(.line)"' "$IMAGES_JSON")
 
+  SCANS="${CUT_DIR}/temper-${DATE}.scans.json"
+  [ -s "$SCANS" ] || { echo "no $SCANS — the scan phase's records are missing" >&2; exit 1; }
+  SCANS_SHA256=$(sha256sum "$SCANS" | cut -d' ' -f1)
+
   MANIFEST="${CUT_DIR}/temper-${DATE}.manifest.yaml"
   if [ "$SIGNING" = keyless ]; then
     attestations="SLSA v1 build provenance + SPDX SBOM (GitHub attestations, verified)"
@@ -460,6 +470,8 @@ finalize() {
     echo "scan_db: \"$(jq -r .scan_db "$IMAGES_JSON")\""
     echo "scan_db_trivy: \"$(jq -r .scan_db_trivy "$IMAGES_JSON")\""
     echo "gate_vulns: \"$(jq -r .gate_vulns "$IMAGES_JSON")\""
+    echo "scans: \"$(basename "$SCANS")\""
+    echo "scans_sha256: \"${SCANS_SHA256}\""
     echo "latest: \"${LATEST_NOTE}\""
     echo "signing: \"${SIGNING}\""
     if [ "$SIGNING" = keyless ]; then
@@ -477,7 +489,7 @@ finalize() {
   } > "$MANIFEST"
   echo "---"
   echo "release complete: $(jq '.images | length' "$IMAGES_JSON") images, release ${DATE} (${REGISTRY}/${IMAGE_REPO})"
-  echo "manifest: $MANIFEST (sign it and attach it to the release for ${DATE}; do not commit it)"
+  echo "manifest: $MANIFEST (sign it and attach it, with $(basename "$SCANS"), to the release for ${DATE}; do not commit either)"
 }
 
 case "$PHASE" in
