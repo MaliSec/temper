@@ -436,6 +436,45 @@ expect_fail "scans-json refuses findings that do not match the gate's counts" \
 grep -q 'negligible=$(gsev Negligible)' scripts/cut-registry.sh \
   && ok "the gate's grype counts include negligible findings" || fail "cut-registry's grype counts leave out negligible"
 
+echo "== vex-check.sh: OpenVEX statements =="
+./scripts/vex-check.sh >/dev/null 2>&1 && ok "the committed VEX statements are well formed" \
+  || fail "vex/ has malformed statements (run: scripts/vex-check.sh)"
+vx="$TMP/vex"; mkdir -p "$vx"
+vexdoc() { # vexdoc <file> <statement json>
+  jq -n --argjson s "$2" '{"@context": "https://openvex.dev/ns/v0.2.0", "@id": "https://example.test/v",
+    author: "t", timestamp: "2026-01-01T00:00:00Z", version: 1, statements: [$s]}' > "$vx/$1"
+}
+p='{"@id": "pkg:oci/node?repository_url=ghcr.io/malisec/temper/node", "subcomponents": [{"@id": "pkg:apk/wolfi/glibc-2.44@0-r0"}]}'
+for c in \
+  "unknown status|CVE-1.json|{\"vulnerability\": {\"name\": \"CVE-1\"}, \"products\": [$p], \"status\": \"maybe\"}" \
+  "not_affected without a justification|CVE-1.json|{\"vulnerability\": {\"name\": \"CVE-1\"}, \"products\": [$p], \"status\": \"not_affected\", \"impact_statement\": \"x\"}" \
+  "affected without an action statement|CVE-1.json|{\"vulnerability\": {\"name\": \"CVE-1\"}, \"products\": [$p], \"status\": \"affected\"}" \
+  "a statement for another vulnerability|CVE-2.json|{\"vulnerability\": {\"name\": \"CVE-1\"}, \"products\": [$p], \"status\": \"affected\", \"action_statement\": \"x\"}" \
+  "a product that is not a Temper image|CVE-1.json|{\"vulnerability\": {\"name\": \"CVE-1\"}, \"products\": [{\"@id\": \"pkg:oci/nginx?repository_url=docker.io/library/nginx\"}], \"status\": \"affected\", \"action_statement\": \"x\"}" \
+  "a product without a package version|CVE-1.json|{\"vulnerability\": {\"name\": \"CVE-1\"}, \"products\": [{\"@id\": \"pkg:oci/node?repository_url=ghcr.io/malisec/temper/node\"}], \"status\": \"affected\", \"action_statement\": \"x\"}" \
+  "a subcomponent purl with qualifiers|CVE-1.json|{\"vulnerability\": {\"name\": \"CVE-1\"}, \"products\": [{\"@id\": \"pkg:oci/node?repository_url=ghcr.io/malisec/temper/node\", \"subcomponents\": [{\"@id\": \"pkg:apk/wolfi/glibc-2.44@0-r0?arch=x86_64\"}]}], \"status\": \"affected\", \"action_statement\": \"x\"}" \
+  "statements that are not objects|CVE-1.json|\"CVE-1\"" \
+  "fixed without evidence|CVE-1.json|{\"vulnerability\": {\"name\": \"CVE-1\"}, \"products\": [$p], \"status\": \"fixed\"}"; do
+  label=${c%%|*} rest=${c#*|} file=${rest%%|*} stmt=${rest#*|}
+  rm -f "$vx"/*.json; vexdoc "$file" "$stmt"
+  expect_fail "vex-check refuses $label" ./scripts/vex-check.sh "$vx" images
+done
+rm -f "$vx"/*.json
+vexdoc CVE-1.json "{\"vulnerability\": {\"name\": \"CVE-1\"}, \"products\": [$p], \"status\": \"affected\", \"action_statement\": \"x\"}"
+if out=$(./scripts/vex-check.sh "$vx" images 2>&1) && grep -q 'stale: CVE-1 for node names glibc-2.44 0-r0' <<<"$out"; then
+  ok "a statement for a package version no image ships is reported as stale, not failed"
+else fail "vex-check did not report a stale statement, or failed on it"; fi
+q='{"@id": "pkg:oci/node?repository_url=ghcr.io/malisec/temper/node", "subcomponents": [{"@id": "pkg:apk/wolfi/glibc-2.44@0-r1"}]}'
+rm -f "$vx"/*.json
+jq -n --argjson p "$p" --argjson q "$q" '{"@context": "https://openvex.dev/ns/v0.2.0", "@id": "https://example.test/v",
+  author: "t", timestamp: "2026-01-01T00:00:00Z", version: 1, statements: [
+  {vulnerability: {name: "CVE-1"}, products: [$p], status: "affected", action_statement: "x"},
+  {vulnerability: {name: "CVE-1"}, products: [$q], status: "affected", action_statement: "x"}]}' > "$vx/CVE-1.json"
+./scripts/vex-check.sh "$vx" images >/dev/null 2>&1 \
+  && ok "one product may have statements for two package versions (during a relock)" \
+  || fail "vex-check rejects statements for two versions of a package on one product"
+expect_fail "vex-check refuses a missing vex directory" ./scripts/vex-check.sh "$TMP/no-such-vex" images
+
 echo "== rollback-latest.sh: fail-closed interfaces =="
 expect_fail "rollback without a tag fails" ./scripts/rollback-latest.sh
 expect_fail "rollback with a malformed tag fails" ./scripts/rollback-latest.sh 2026.1.1
