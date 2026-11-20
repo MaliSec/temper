@@ -1,0 +1,27 @@
+# temper-node-fips: makes node:crypto APIs that bypass OpenSSL's provider
+# interface throw in the node-fips image. guard.js is preloaded through
+# NODE_OPTIONS (set in images/node-fips/apko.yaml).
+package:
+  name: temper-node-fips
+  version: 0.1.0
+  epoch: 0
+  description: "node-fips: refuse node:crypto APIs computed outside the Go Cryptographic Module"
+  copyright:
+    - license: Apache-2.0
+  target-architecture:
+    - x86_64
+    - aarch64
+
+environment:
+  contents:
+    keyring:
+      - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+    repositories:
+      - https://packages.wolfi.dev/os
+    packages:
+      - busybox=1.38.0-r3
+
+pipeline:
+  - name: Install
+    runs: |
+      install -Dm644 guard.js "${{targets.destdir}}/usr/lib/node-fips/guard.js"

@@ -1,0 +1,234 @@
+# Build and policy gate for the Temper images, plus the gofips provider
+# suites. Builds from the committed lockfiles and reports lockfile drift.
+# Nothing is published here; releases are cut by temper-release.yml.
+#
+# Actions are pinned to commit SHAs; the comment beside each names the release.
+
+name: temper-build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  MELANGE_RUNNER: docker
+  GATE_VULNS: 'true'
+  OUT_DIR: dist
+
+# Every image is built, checked and tested natively on both architectures:
+# x86_64 on ubuntu-24.04, aarch64 on ubuntu-24.04-arm.
+jobs:
+  packages:
+    name: Packages (${{ matrix.arch }})
+    strategy:
+      matrix:
+        include:
+          - { arch: x86_64, runner: ubuntu-24.04 }
+          - { arch: aarch64, runner: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install apko and melange
+        run: |
+          TOOLS="apko melange" ./scripts/install-tools.sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # The signing key stays on this runner; the build job re-indexes and
+      # signs both architectures' packages with its own key.
+      - name: Build packages (gofips provider, python-fips hardening)
+        run: ./scripts/build.sh --packages --arch "${{ matrix.arch }}"
+
+      - name: Upload packages
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: packages-${{ matrix.arch }}
+          path: packages/${{ matrix.arch }}/*.apk
+          if-no-files-found: error
+          retention-days: 7
+
+  build:
+    name: Build + policy gate (${{ matrix.arch }})
+    needs: packages
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x86_64, docker_arch: amd64, runner: ubuntu-24.04 }
+          - { arch: aarch64, docker_arch: arm64, runner: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.runner }}
+    env:
+      ARCHS: ${{ matrix.arch }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install pinned toolchain
+        run: |
+          echo "==> install-tools"
+          ./scripts/install-tools.sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          command -v jq >/dev/null 2>&1 || { echo "==> jq (check-policy dependency)"; (sudo apt-get update -qq && sudo apt-get install -y -qq jq) >/dev/null 2>&1 || echo "WARN: jq install failed" >&2; }
+          command -v jq >/dev/null || { echo "jq not available on this runner image" >&2; exit 1; }
+
+      - name: Download packages (both architectures)
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: packages-*
+          path: pkg-artifacts
+
+      # The -fips images install these from the @local repo. Both
+      # architectures are indexed so the lock below covers both.
+      - name: Index packages
+        run: |
+          set -euo pipefail
+          for a in x86_64 aarch64; do
+            mkdir -p "packages/$a"
+            cp "pkg-artifacts/packages-$a/"*.apk "packages/$a/"
+          done
+          ./scripts/build.sh --index
+
+      # The committed lockfiles are copied before build.sh --lock rewrites
+      # them in place, then restored for the build. Drift (newer Wolfi
+      # packages) is a warning, not a failure: the images are still built
+      # from the committed lockfiles. A failed lock run fails the step.
+      # Run once, on x86_64, for both architectures.
+      - name: Lockfile drift report
+        if: matrix.arch == 'x86_64'
+        run: |
+          set -euo pipefail
+          mkdir -p lockfile-check
+          for f in images/*/apko*.lock.json; do
+            cp "$f" "lockfile-check/$(echo "$f" | tr / _)"
+          done
+          ./scripts/build.sh --lock --arch x86_64,aarch64 >/dev/null
+          strip='[.contents.packages[] | select((.url // "") | startswith("packages/") | not)]'
+          drift=0
+          for f in images/*/apko*.lock.json; do
+            jq -S 'del(.contents.keyring)' "$f" | jq -S "$strip" > /tmp/a.json
+            jq -S 'del(.contents.keyring)' "lockfile-check/$(echo "$f" | tr / _)" | jq -S "$strip" > /tmp/b.json
+            if ! diff -q /tmp/a.json /tmp/b.json >/dev/null; then
+              echo "::warning file=$f::lockfile is behind Wolfi: a fresh lock resolves different packages (refresh with: make lock)"
+              diff /tmp/a.json /tmp/b.json > "lockfile-check/$(echo "$f" | tr / _).drift.diff" || true
+              drift=1
+            fi
+          done
+          # restore the committed lockfiles: the build below must use them
+          for f in images/*/apko*.lock.json; do
+            cp "lockfile-check/$(echo "$f" | tr / _)" "$f"
+          done
+          if [ "$drift" = 0 ]; then
+            echo "lockfile drift: none (every image's package set matches its committed lockfile)"
+          else
+            echo "lockfile drift: present (see warnings; images are still built from the committed lockfiles)"
+          fi
+
+      - name: Upload lockfile drift evidence
+        if: matrix.arch == 'x86_64'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: lockfile-drift-check
+          path: lockfile-check/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Build images (${{ matrix.arch }}, against the lockfile)
+        run: ./scripts/build.sh --images --arch "$ARCHS"
+
+      # Policy §3.2: a second build of every image must be identical.
+      - name: Reproducibility check (second build, compared)
+        run: |
+          set -euo pipefail
+          OUT_DIR=dist-rebuild ./scripts/build.sh --images --arch "$ARCHS"
+          diffs=0
+          for tar in dist/*.tar; do
+            name=$(basename "$tar")
+            if [ "$(tar -xOf "$tar" index.json | sha256sum)" != "$(tar -xOf "dist-rebuild/$name" index.json | sha256sum)" ]; then
+              echo "::error::$name differs between two builds from the same lockfile"; diffs=1
+            fi
+          done
+          rm -rf dist-rebuild
+          [ "$diffs" = 0 ] && echo "every image rebuilt identically"
+
+      - name: Policy gate
+        run: ./scripts/check-policy.sh
+
+      - name: Smoke python images (every line)
+        env:
+          ARCH: ${{ matrix.docker_arch }}
+        run: |
+          set -euo pipefail
+          for tar in dist/python.tar dist/python-[0-9]*.tar; do
+            name=$(basename "$tar" .tar); line=$(./scripts/image-line.sh "$name")
+            docker load < "$tar"
+            docker run --rm -v "$PWD/tests:/t:ro" -e PYTHON_LINE="$line" \
+              --entrypoint "/usr/bin/python$line" "$name:local-$ARCH" /t/smoke-python.py
+          done
+
+      - name: Smoke -fips images (every line)
+        run: |
+          set -euo pipefail
+          for tar in dist/node-fips*.tar dist/python-fips*.tar; do docker load < "$tar"; done
+          tests/smoke-fips.sh ${{ matrix.docker_arch }}
+
+      # The images above are loaded, so the suite's smoke cases run too.
+      - name: Repository tests
+        run: |
+          set -euo pipefail
+          make validate
+          ./tests/run.sh
+          ./tests/trivy-regression.sh
+
+      - name: Upload image tars
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image-tars-${{ matrix.arch }}
+          path: dist/*.tar
+          if-no-files-found: error
+          retention-days: 7
+
+  gofips-provider-suites:
+    needs: build
+    uses: ./.github/workflows/gofips-suites.yml
+    with:
+      images-artifact: image-tars-{0}
+
+  dco:
+    name: DCO sign-off
+    # workflow_dispatch: temper-relock runs this on its branch, whose pull
+    # request (opened with GITHUB_TOKEN) triggers no pull_request run.
+    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main')
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Every commit carries a Signed-off-by trailer
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref || 'main' }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "refs/heads/$BASE_REF"
+          BASE_SHA=$(git merge-base FETCH_HEAD "$HEAD_SHA")
+          missing=0
+          for c in $(git rev-list --no-merges "$BASE_SHA..$HEAD_SHA"); do
+            if ! git log -1 --format=%B "$c" | grep -qE '^Signed-off-by: .+ <.+@.+>$'; then
+              echo "missing Signed-off-by: $(git log -1 --format='%h %s' "$c")" >&2
+              missing=1
+            fi
+          done
+          if [ "$missing" != 0 ]; then
+            echo "Sign your commits with 'git commit -s'. See CONTRIBUTING.md." >&2
+            exit 1
+          fi
+          echo "DCO: every commit is signed off"

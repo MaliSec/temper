@@ -1,0 +1,35 @@
+# node, Node.js 24 line (maintenance LTS), published as node:24. Same image
+# as images/node except the Node.js line; see images/node/README.md.
+contents:
+  keyring:
+    - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+  repositories:
+    - https://packages.wolfi.dev/os
+  packages:
+    - wolfi-baselayout
+    - nodejs-24
+    - glibc
+    - glibc-locale-posix
+    - libgcc
+    - libstdc++
+    - ca-certificates-bundle
+    - tzdata
+
+accounts:
+  groups:
+    - groupname: nonroot
+      gid: 65532
+  users:
+    - username: nonroot
+      uid: 65532
+  run-as: 65532
+
+environment:
+  PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+  LANG: C.UTF-8
+
+entrypoint: {}
+
+archs:
+  - x86_64
+  - aarch64

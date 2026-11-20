@@ -1,0 +1,51 @@
+# node-fips: the node image with the gofips OpenSSL provider. Crypto through
+# OpenSSL's provider interface runs in the Go Cryptographic Module (CMVP
+# #5247); the default and legacy OpenSSL providers are not loaded, and
+# node:crypto APIs that bypass providers throw (temper-node-fips). See
+# README.md.
+#
+# Keep the base package set, accounts and environment identical to
+# images/node/apko.yaml (make test checks this)
+contents:
+  keyring:
+    - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+    - melange.rsa.pub
+  repositories:
+    - https://packages.wolfi.dev/os
+    - '@local packages'
+  packages:
+    - wolfi-baselayout
+    - nodejs-26
+    - glibc
+    - glibc-locale-posix
+    - libgcc
+    - libstdc++
+    - ca-certificates-bundle
+    - tzdata
+    - temper-gofips@local
+    - temper-node-fips@local
+
+accounts:
+  groups:
+    - groupname: nonroot
+      gid: 65532
+  users:
+    - username: nonroot
+      uid: 65532
+  run-as: 65532
+
+environment:
+  PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+  LANG: C.UTF-8
+  OPENSSL_CONF: /etc/ssl/openssl-gofips.cnf
+  GODEBUG: fips140=on
+  # Preloads the guard (APIs that bypass the provider throw) and limits the
+  # default cipher list to the suites gofips serves. An app that sets its
+  # own NODE_OPTIONS must keep both.
+  NODE_OPTIONS: --require=/usr/lib/node-fips/guard.js --tls-cipher-list=TLS_AES_256_GCM_SHA384:TLS_AES_128_GCM_SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256
+
+entrypoint: {}
+
+archs:
+  - x86_64
+  - aarch64

@@ -1,0 +1,8 @@
+Temper
+Copyright 2026 Maligator Software, Inc.
+
+This repository contains container image definitions and release tooling.
+The images it builds install packages from the Wolfi project
+(https://wolfi.dev). Those packages, and the build tools this repository
+invokes, are the work of their respective authors and are distributed under
+their own licenses. See docs/third-party.md.

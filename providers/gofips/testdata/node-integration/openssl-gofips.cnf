@@ -1,0 +1,30 @@
+# OpenSSL config for the gofips Node integration tests.
+#
+# gofips (Go Cryptographic Module, CMVP #5247) is the only provider with
+# cryptographic algorithms. base is also active; it has only
+# encoders/decoders, needed to load PEM keys and certs. The default
+# provider is absent, so every crypto fetch resolves to gofips or fails.
+#
+# Node needs SHA-256 and a RAND (CTR-DRBG) at boot. Without a RAND, its
+# CSPRNG bootstrap aborts with "Assertion failed: ncrypto::CSPRNG(nullptr, 0)".
+# The same assert appears if gofips.so is linked against a different
+# libcrypto soname than the image's (libcrypto.so.4 for OpenSSL 4.0.3):
+# the dlopen fails and activation silently fails.
+#
+# GOFIPS_MODULE_PATH is substituted by run-node-integration.sh.
+
+openssl_conf = openssl_init
+
+[openssl_init]
+providers = provider_sect
+
+[provider_sect]
+gofips = gofips_sect
+base = base_sect
+
+[gofips_sect]
+module = GOFIPS_MODULE_PATH
+activate = 1
+
+[base_sect]
+activate = 1

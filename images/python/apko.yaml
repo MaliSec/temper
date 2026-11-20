@@ -1,0 +1,40 @@
+---
+# python: distroless Python 3.14 runtime base (glibc tier). See README.md.
+# The Python 3.13 line is images/python-3.13.
+contents:
+  keyring:
+    - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+  repositories:
+    - https://packages.wolfi.dev/os
+  packages:
+    - wolfi-baselayout
+    - glibc
+    - glibc-locale-posix
+    - libgcc
+    - python-3.14
+    - ca-certificates-bundle
+    - tzdata
+
+accounts:
+  groups:
+    - groupname: nonroot
+      gid: 65532
+  users:
+    - username: nonroot
+      uid: 65532
+      gid: 65532
+  run-as: 65532
+
+environment:
+  PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+  LANG: C.UTF-8
+  SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt
+  SSL_CERT_DIR: /etc/ssl/certs
+  # No __pycache__ writes, so the image runs on a read-only rootfs.
+  PYTHONDONTWRITEBYTECODE: "1"
+
+entrypoint: {}
+
+archs:
+  - x86_64
+  - aarch64

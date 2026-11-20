@@ -1,0 +1,6 @@
+# node-debug: node plus a busybox shell, so a debug pod can exec into it.
+# Troubleshooting only, never a production base (policy/security-policy.md §2).
+include: images/node/apko.yaml
+contents:
+  packages:
+    - busybox

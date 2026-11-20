@@ -1,0 +1,41 @@
+# node-builder, Node.js 24 line, published as node-builder:24. Build only,
+# never a production runtime. See images/node-builder/README.md.
+#
+# Build (from the repository root):
+#   apko lock images/node-builder-24/apko.yaml --arch x86_64,aarch64 \
+#     --output images/node-builder-24/apko.lock.json
+#   apko build images/node-builder-24/apko.yaml node-builder-24:local dist/node-builder-24.tar \
+#     --arch x86_64 --lockfile images/node-builder-24/apko.lock.json
+contents:
+  keyring:
+    - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+  repositories:
+    - https://packages.wolfi.dev/os
+  packages:
+    - wolfi-baselayout
+    - ca-certificates-bundle
+    - nodejs-24
+    - npm
+    - busybox
+
+accounts:
+  groups:
+    - groupname: nonroot
+      gid: 65532
+  users:
+    - username: nonroot
+      uid: 65532
+      gid: 65532
+  run-as: 65532
+
+environment:
+  PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+  SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt
+  SSL_CERT_DIR: /etc/ssl/certs
+  HOME: /home/nonroot
+
+entrypoint: {}
+
+archs:
+  - x86_64
+  - aarch64
