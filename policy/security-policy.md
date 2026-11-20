@@ -86,8 +86,9 @@ None of them is a production runtime base image.
 2. **Release records.** Every release writes a signed manifest, attached to
    the GitHub release, that records the git commit, the signing mode, the
    scanner database freshness and, per image, the digest and scan counts.
-   A scans file attached with it lists every finding behind the counts,
-   and the manifest records its sha256.
+   Attached with it, a scans file lists every finding behind the counts
+   and a VEX file the project's statements on them; the manifest records
+   both files' sha256.
    Each image's provenance binds it to the source commit, which pins the
    lockfiles. These records are the evidence trail for §1.7.
 

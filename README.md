@@ -95,10 +95,11 @@ build ──► policy check ──► vulnerability scan ──► push by dige
   `python:3.14`, `python:3.13`, `go-builder:1.26`) the newest release on that
   line. Pin by digest for reproducible builds.
 - **Release manifest.** Each cut produces a manifest listing every image's
-  digest and scan counts, and a scans file with every finding behind them.
-  Both are published on the release for that date tag, with the manifest
-  signed and recording the scans file's sha256; neither is committed to
-  this repository.
+  digest and scan counts, a scans file with every finding behind them, and
+  a VEX file with the project's statements on those findings. All three
+  are published on the release for that date tag, with the manifest signed
+  and recording the other two files' sha256; none is committed to this
+  repository.
 
 ## Verify an image
 

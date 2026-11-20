@@ -209,12 +209,17 @@ scan_images() {
         vulns_trivy: ([.[] | "\(.arch): \(.vulns_trivy)"] | join("; "))}')")
   done
 
-  # Every finding behind the gate's counts, for the release; the manifest
-  # records its sha256. Built here, so a mismatch stops the cut before
-  # anything is published.
+  # The release's VEX statements, and every finding behind the gate's
+  # counts with the statement that covers it, if any; the manifest records
+  # both files' sha256. Built here, so a malformed statement or a mismatch
+  # stops the cut before anything is published. VEX does not change the
+  # gate above, which runs on the scanners' own findings.
+  ./scripts/vex-check.sh vex images
+  ./scripts/vex-merge.sh vex "$DATE" > "$CUT_DIR/temper-${DATE}.vex.json"
   printf '%s\n' "${records[@]}" | jq -s --arg scan_db "$DB_NOTE" --arg scan_db_trivy "$TRIVY_DB_NOTE" \
     '{scan_db: $scan_db, scan_db_trivy: $scan_db_trivy, images: .}' > "$CUT_DIR/scan/records.json"
-  ./scripts/scans-json.sh "$CUT_DIR/scan/records.json" "$CUT_DIR/scan" "$DATE" > "$CUT_DIR/temper-${DATE}.scans.json"
+  ./scripts/scans-json.sh "$CUT_DIR/scan/records.json" "$CUT_DIR/scan" "$DATE" "$CUT_DIR/temper-${DATE}.vex.json" \
+    > "$CUT_DIR/temper-${DATE}.scans.json"
 }
 
 publish() {
@@ -453,6 +458,9 @@ finalize() {
   SCANS="${CUT_DIR}/temper-${DATE}.scans.json"
   [ -s "$SCANS" ] || { echo "no $SCANS — the scan phase's records are missing" >&2; exit 1; }
   SCANS_SHA256=$(sha256sum "$SCANS" | cut -d' ' -f1)
+  VEX="${CUT_DIR}/temper-${DATE}.vex.json"
+  [ -s "$VEX" ] || { echo "no $VEX — the scan phase's records are missing" >&2; exit 1; }
+  VEX_SHA256=$(sha256sum "$VEX" | cut -d' ' -f1)
 
   MANIFEST="${CUT_DIR}/temper-${DATE}.manifest.yaml"
   if [ "$SIGNING" = keyless ]; then
@@ -472,6 +480,8 @@ finalize() {
     echo "gate_vulns: \"$(jq -r .gate_vulns "$IMAGES_JSON")\""
     echo "scans: \"$(basename "$SCANS")\""
     echo "scans_sha256: \"${SCANS_SHA256}\""
+    echo "vex: \"$(basename "$VEX")\""
+    echo "vex_sha256: \"${VEX_SHA256}\""
     echo "latest: \"${LATEST_NOTE}\""
     echo "signing: \"${SIGNING}\""
     if [ "$SIGNING" = keyless ]; then
@@ -489,7 +499,7 @@ finalize() {
   } > "$MANIFEST"
   echo "---"
   echo "release complete: $(jq '.images | length' "$IMAGES_JSON") images, release ${DATE} (${REGISTRY}/${IMAGE_REPO})"
-  echo "manifest: $MANIFEST (sign it and attach it, with $(basename "$SCANS"), to the release for ${DATE}; do not commit either)"
+  echo "manifest: $MANIFEST (sign it and attach it, with $(basename "$SCANS") and $(basename "$VEX"), to the release for ${DATE}; do not commit them)"
 }
 
 case "$PHASE" in
