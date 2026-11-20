@@ -35,6 +35,9 @@ say "OpenSSL 3.5.9 compat pair"
 [ -f "$W/compat/libcrypto.so.3" ] || bash "$REPO/providers/gofips/testdata/fetch-compat-openssl3.sh" "$W/compat" >/dev/null
 say "genuine OpenSSL FIPS provider"
 [ -f "$W/fips/fips.so" ] || bash "$HERE/fetch-fips-provider.sh" "$W/fips" >/dev/null
+# Pulled here: a pull inside the captures would write into their output.
+docker pull -q "$GOLANG_IMAGE" >/dev/null
+docker pull -q "$UBUNTU_IMAGE" >/dev/null
 
 say "captures: host suites, arm64, parity, OpenSSL 3.0.13 / 3.5.7 / 4.0.3 matrix (parallel)"
 docker run --rm --network host "${U[@]}" -e SHARED="$W/shared" -v "$W/shared:$W/shared" \
