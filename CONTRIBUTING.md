@@ -58,8 +58,9 @@ relock, to move them to a newer toolchain.
   an optional image name.
 - **By hand:** `make lock IMAGE=node`, then `./scripts/lock-diff.sh` to see
   what moved. An image and its `-fips` variant always relock together.
-  Images that use the `@local` repo need `./scripts/build.sh --packages`
-  first.
+  Images that use the `@local` repo lock against the packages built on the
+  CI runners: a package records its directory sizes, which depend on the
+  build filesystem. Relock them with `temper-relock`.
 - **Version lines:** `images/<name>` is the newest line of a repository;
   an older line is `images/<name>-<line>` (`images/node-24`) with a `repo`
   file naming the repository (`node`). It gets `<line>` and `<line>-<date>`

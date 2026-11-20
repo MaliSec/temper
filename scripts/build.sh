@@ -98,7 +98,8 @@ build_packages() {
     # --git-commit is a constant: HEAD's sha would go into .PKGINFO and change
     # the package hash, and so the committed lockfile, on every commit. The
     # real commit is bound by the image provenance in cut-registry.sh.
-    "${SUDO_PREFIX[@]}" melange build "$recipe" --arch "$ARCHS" --signing-key melange.rsa --git-commit unknown "${RUNNER_ARGS[@]}" "${WORKSPACE_ARGS[@]}" "${SOURCE_ARGS[@]}"
+    # TZ=UTC: the SBOM's creation time is written in the local zone.
+    TZ=UTC "${SUDO_PREFIX[@]}" melange build "$recipe" --arch "$ARCHS" --signing-key melange.rsa --git-commit unknown "${RUNNER_ARGS[@]}" "${WORKSPACE_ARGS[@]}" "${SOURCE_ARGS[@]}"
   done
   # docker-runner builds run the workspace as root; return the outputs to the
   # host user so nonroot apko/scan/publish runs can reuse them.
