@@ -202,9 +202,7 @@ jobs:
 
   dco:
     name: DCO sign-off
-    # workflow_dispatch: temper-relock runs this on its branch, whose pull
-    # request (opened with GITHUB_TOKEN) triggers no pull_request run.
-    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main')
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
