@@ -433,6 +433,30 @@ else fail "scans-json output is not the expected normalized findings"; fi
 sed -i 's/negligible=1/negligible=0/' "$sj/records.json"
 expect_fail "scans-json refuses findings that do not match the gate's counts" \
   ./scripts/scans-json.sh "$sj/records.json" "$sj/scan" 2026.01.01
+mkdir -p "$sj/vex" "$sj/images/app"
+jq -n '{"@context": "https://openvex.dev/ns/v0.2.0", "@id": "https://example.test/v", author: "t",
+  timestamp: "2026-01-02T00:00:00Z", version: 1, statements: [
+  {vulnerability: {name: "CVE-1"}, status: "fixed", status_notes: "fixed upstream",
+   products: [{"@id": "pkg:oci/app?repository_url=ghcr.io/malisec/temper/app", subcomponents: [{"@id": "pkg:apk/wolfi/pkg@1.0"}]}]},
+  {vulnerability: {name: "CVE-2"}, status: "not_affected", justification: "component_not_present", impact_statement: "x",
+   products: [{"@id": "pkg:oci/app?repository_url=ghcr.io/malisec/temper/app", subcomponents: [{"@id": "pkg:apk/wolfi/pkg@9.9"}]}]}]}' \
+  > "$sj/vex/CVE-1.json"
+if ./scripts/vex-merge.sh "$sj/vex" 2026.01.01 > "$sj/vex.json" \
+   && [ "$(jq -c '[."@context", (.statements | length), .statements[0].timestamp]' "$sj/vex.json")" \
+        = '["https://openvex.dev/ns/v0.2.0",2,"2026-01-02T00:00:00Z"]' ]; then
+  ok "vex-merge writes one OpenVEX document, each statement keeping its file's timestamp"
+else fail "vex-merge output is not the merged OpenVEX document"; fi
+sed -i 's/negligible=0/negligible=1/' "$sj/records.json"
+if out=$(IMAGES_DIR="$sj/images" ./scripts/scans-json.sh "$sj/records.json" "$sj/scan" 2026.01.01 "$sj/vex.json" 2>/dev/null) \
+   && [ "$(jq -c '[(.images.app.platforms.amd64.grype | map(.id + ":" + (.vex.status // "-"))),
+                   (.images.app.platforms.amd64.trivy | map(.id + ":" + (.vex.status // "-")))]' <<<"$out")" \
+        = '[["CVE-1:fixed","CVE-2:-"],["CVE-1:fixed"]]' ]; then
+  ok "scans-json marks a finding with the statement for its vulnerability, image and exact package version"
+else fail "scans-json applied VEX statements to the wrong findings"; fi
+grep -q 'vex-check.sh vex images' scripts/cut-registry.sh && grep -q 'vex_sha256' scripts/cut-registry.sh \
+  && grep -q 'temper-${DATE}.vex.json' .github/workflows/temper-release-build.yml \
+  && ok "the release checks the VEX statements, records the VEX file's sha256 and attaches it" \
+  || fail "the release does not check, record or attach the VEX file"
 grep -q 'negligible=$(gsev Negligible)' scripts/cut-registry.sh \
   && ok "the gate's grype counts include negligible findings" || fail "cut-registry's grype counts leave out negligible"
 

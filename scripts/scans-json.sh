@@ -5,18 +5,44 @@
 # release attaches it to the GitHub release, and the signed manifest
 # records its sha256.
 #
-# Usage: scripts/scans-json.sh <records.json> <scan-dir> <release>
+# Usage: scripts/scans-json.sh <records.json> <scan-dir> <release> [<vex.json>]
 #   <records.json>: the scan stage's records (scan_db, scan_db_trivy, and
 #   per image its name, digest, platforms and gate counts).
 #   <scan-dir>: <image>.<arch>.{grype,trivy}.json. Output goes to stdout.
-# scripts/cut-registry.sh writes both, and runs this before publishing.
+#   <vex.json>: the release's VEX document (scripts/vex-merge.sh). A finding
+#   a statement covers (same vulnerability or alias, image repository, and
+#   package name and version) carries that statement's status as "vex".
+#   The counts stay the scanners' own: VEX does not change what the gate sees.
+# scripts/cut-registry.sh writes all of them, and runs this before publishing.
 set -euo pipefail
 
-usage="usage: scans-json.sh <records.json> <scan-dir> <release>"
+usage="usage: scans-json.sh <records.json> <scan-dir> <release> [<vex.json>]"
 IMAGES_JSON="${1:?$usage}"
 SCAN_DIR="${2:?$usage}"
 RELEASE="${3:?$usage}"
+VEX="${4:-}"
+IMAGES_DIR="${IMAGES_DIR:-images}"
+REGISTRY_REPO="ghcr.io/malisec/temper"
 [ -f "$IMAGES_JSON" ] || { echo "scans-json: $IMAGES_JSON missing" >&2; exit 1; }
+vex_doc='{"statements": []}'
+if [ -n "$VEX" ]; then
+  vex_doc=$(jq -c . "$VEX") || { echo "scans-json: $VEX is not valid JSON" >&2; exit 1; }
+fi
+
+# The statement covering a finding, if any: same vulnerability (or one of
+# its aliases), the image's repository, and the finding's Wolfi package at
+# its exact version.
+with_vex='map(. as $f
+  | ("pkg:oci/" + $repo + "?repository_url=" + $registry + "/" + $repo) as $product
+  | ("pkg:apk/wolfi/" + $f.package.name + "@" + $f.package.version) as $sub
+  | ([$f.id] + ($f.related // [])) as $ids
+  | [$vex.statements[]
+      | select(.vulnerability.name as $v | $ids | index([$v]))
+      | select(any(.products[]?; ."@id" == $product and any(.subcomponents[]?; ."@id" == $sub)))][0] as $s
+  | if ($s != null) and ($f.package.type == "apk" or $f.package.type == "wolfi")
+    then . + {vex: ({status: $s.status} + ($s | with_entries(select(.key == "justification" or
+          .key == "impact_statement" or .key == "action_statement" or .key == "status_notes"))))}
+    else . end)'
 
 grype_findings='[.matches[]? | {
   id: .vulnerability.id,
@@ -57,6 +83,9 @@ while read -r name digest; do
       got=$(jq 'length' <<<"$found")
       [ "$want" = "$got" ] || { echo "scans-json: $name/$arch $tool lists $got findings, the gate counted $want" >&2; exit 1; }
     done
+    repo=$name; [ ! -f "$IMAGES_DIR/$name/repo" ] || repo=$(tr -d '[:space:]' < "$IMAGES_DIR/$name/repo")
+    gf=$(jq -c --arg repo "$repo" --arg registry "$REGISTRY_REPO" --argjson vex "$vex_doc" "$with_vex" <<<"$gf")
+    tf=$(jq -c --arg repo "$repo" --arg registry "$REGISTRY_REPO" --argjson vex "$vex_doc" "$with_vex" <<<"$tf")
     plats=$(jq -c --arg arch "$arch" --arg d "$pdigest" --argjson g "$gf" --argjson t "$tf" \
       '. + {($arch): {digest: $d, grype: $g, trivy: $t}}' <<<"$plats")
   done < <(jq -r --arg n "$name" '.images[] | select(.name == $n) | .platforms[] | "\(.arch) \(.digest)"' "$IMAGES_JSON")
@@ -67,6 +96,6 @@ done < <(jq -r '.images[] | "\(.name) \(.digest)"' "$IMAGES_JSON")
 jq -n --arg release "$RELEASE" --arg gv "$grype_version" --arg tv "$trivy_version" \
   --arg gdb "$(jq -r .scan_db "$IMAGES_JSON")" --arg tdb "$(jq -r .scan_db_trivy "$IMAGES_JSON")" \
   --argjson images "$images" \
-  '{schema: 1, release: $release,
+  '{schema: 2, release: $release,
     scanners: {grype: {version: $gv, db: $gdb}, trivy: {version: $tv, db: $tdb}},
     images: $images}'

@@ -105,8 +105,9 @@ relock moves the package, and must then be checked again.
 - Statements change what is reported, never what the release gate
   blocks: the gate runs on the scanners' raw findings.
 
-`scripts/vex-check.sh` checks the files (`make test` runs it) and lists
-statements that no longer apply.
+`scripts/vex-check.sh` checks the files (`make test` runs it, and so does
+each release, before publishing) and lists statements that no longer
+apply. Each release attaches the statements as `temper-<release>.vex.json`.
 
 ## What belongs here
 

@@ -168,6 +168,25 @@ grep -F "scans_sha256: \"$(sha256sum temper-<date tag>.scans.json | cut -d' ' -f
 
 The findings are as of the release; scanner databases change daily.
 
+## VEX statements
+
+Each release also attaches `temper-<release>.vex.json`: the project's
+[OpenVEX](https://openvex.dev) statements at release time (from `vex/` in
+this repository), saying for a finding whether the image is affected and
+why. A finding in the scans file that a statement covers carries its
+status as `vex`. The manifest records the file's sha256 (`vex_sha256`):
+
+```sh
+gh release download <date tag> --repo MaliSec/temper \
+  --pattern 'temper-<date tag>.vex.json'
+grep -F "vex_sha256: \"$(sha256sum temper-<date tag>.vex.json | cut -d' ' -f1)\"" \
+  temper-<date tag>.manifest.yaml
+grype ghcr.io/malisec/temper/<image>@sha256:<digest> --vex temper-<date tag>.vex.json
+```
+
+Statements change what is reported, not what the release gate blocks: the
+gate runs on the scanners' own findings.
+
 ## The gofips evidence bundle
 
 Each release attaches `gofips-evidence-<release>.tar.gz`: the gofips
