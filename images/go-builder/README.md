@@ -38,7 +38,7 @@ FROM ${BUILDER} AS build
 WORKDIR /src
 COPY . .
 RUN git config --global --add safe.directory /src \
-    && CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out ./cmd/…
+    && CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /tmp/app ./cmd/…
 ```
 
 `git config --global --add safe.directory` is required when the source
