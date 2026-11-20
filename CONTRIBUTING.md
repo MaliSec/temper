@@ -87,6 +87,27 @@ package stream (`scripts/image-line.sh`; `images/<name>/line` overrides
 it). For an urgent fix, run `temper-nightly` by hand for the affected
 image; it merges the relock once CI passes and releases.
 
+## VEX statements
+
+`vex/` holds an [OpenVEX](https://openvex.dev) file per vulnerability
+(`vex/CVE-2026-1234.json`) saying how it affects each image repository.
+Each statement names the package version it was checked against
+(`pkg:apk/wolfi/glibc-2.44@2.44-r24`), so it stops applying when a
+relock moves the package, and must then be checked again.
+
+- `not_affected` needs a justification and an impact statement giving
+  the evidence (for example, which binaries were checked and how).
+- `fixed` (the shipped package already contains the fix, though a
+  scanner still reports it) needs status notes with the evidence: the
+  upstream fix commit and how the shipped build was shown to contain it.
+- `affected` needs an action statement: the fix status and what to do
+  meanwhile. `under_investigation` needs status notes.
+- Statements change what is reported, never what the release gate
+  blocks: the gate runs on the scanners' raw findings.
+
+`scripts/vex-check.sh` checks the files (`make test` runs it) and lists
+statements that no longer apply.
+
 ## What belongs here
 
 In scope: image definitions, package recipes, the build, policy, scan,
