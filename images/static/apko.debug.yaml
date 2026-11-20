@@ -1,0 +1,6 @@
+# static-debug: static plus a busybox shell, so a debug pod can exec into it.
+# Troubleshooting only, never a production base (policy/security-policy.md §2).
+include: images/static/apko.yaml
+contents:
+  packages:
+    - busybox

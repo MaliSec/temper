@@ -1,0 +1,355 @@
+---
+# gofips-suites: every gofips provider suite, natively on amd64 and arm64.
+# temper-build runs it on pull requests and pushes to main. The release runs it
+# with the shipped provider (the gofips.so inside the release's
+# temper-gofips package) for most suites; the Node integration, interop,
+# X509, legacy-constructor, mode-matrix and Go unit-test steps build their
+# own. The logs go into the attested evidence bundle.
+name: gofips-suites
+
+on:
+  workflow_call:
+    inputs:
+      images-artifact:
+        description: "Artifact with the node and go-builder image tars; {0} is the arch"
+        type: string
+        required: true
+      packages-artifact:
+        description: "Release: artifact with the temper-gofips package; {0} is the arch"
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  gofips-provider-suites:
+    name: gofips provider acceptance suites (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x86_64, goarch: amd64, go_sha256: 9849f4e04ee35303714e34fbc3ac8ab44ea3e448a95aa182f91e3b9b79c710ec, runner: ubuntu-24.04 }
+          - { arch: aarch64, goarch: arm64, go_sha256: 6c2f29b458b5add0835f18b776f69c8881a6d88428f1484a6da55755e620757e, runner: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download image tars
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ format(inputs.images-artifact, matrix.arch) }}
+          path: dist
+
+      # The runner's CPU, recorded with the evidence: the SP's operational
+      # environments are listed by architecture.
+      - name: Record the operating environment
+        run: |
+          set -euo pipefail
+          { uname -srm; grep -m1 -E 'model name|CPU part|Model' /proc/cpuinfo || true; lscpu | grep -E 'Model name|Vendor ID|Architecture' || true; cat /etc/os-release | grep -E '^(NAME|VERSION)='; } | tee /tmp/gofips-oe.txt
+
+      - name: Install Go
+        run: |
+          curl -fsSL "https://go.dev/dl/go1.26.11.linux-${{ matrix.goarch }}.tar.gz" -o /tmp/go.tar.gz
+          echo "${{ matrix.go_sha256 }}  /tmp/go.tar.gz" | sha256sum -c -
+          mkdir -p "$HOME/go-toolchain"
+          tar -C "$HOME/go-toolchain" -xzf /tmp/go.tar.gz
+          echo "$HOME/go-toolchain/go/bin" >> "$GITHUB_PATH"
+
+      # Release: the suites run against the provider users get, taken from
+      # the release's temper-gofips package, instead of a fresh build.
+      - name: Download the release packages
+        if: inputs.packages-artifact != ''
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ format(inputs.packages-artifact, matrix.arch) }}
+          path: /tmp/release-packages
+
+      - name: Use the shipped provider
+        if: inputs.packages-artifact != ''
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/shipped
+          apk=$(ls /tmp/release-packages/temper-gofips-*.apk)
+          tar --ignore-zeros --warning=no-unknown-keyword -xzf "$apk" -C /tmp/shipped usr/lib/ossl-modules/gofips.so
+          so=/tmp/shipped/usr/lib/ossl-modules/gofips.so
+          { echo "package: $(basename "$apk") sha256 $(sha256sum "$apk" | cut -d' ' -f1)"
+            echo "gofips.so: sha256 $(sha256sum "$so" | cut -d' ' -f1)"
+            go version -m "$so" | grep -E 'GOFIPS140|^\S+: go' ; } | tee /tmp/gofips-shipped.txt
+          # The shipped binary must carry the approved-mode build marker.
+          go version -m "$so" | awk '$1 == "build" && $2 == "GOFIPS140=v1.0.0-c2097c7c" {f=1} END {exit !f}'
+          echo "SHIPPED_SO=$so" >> "$GITHUB_ENV"
+
+      # The validated module is the frozen archive inside the Go toolchain.
+      # Fail unless it matches the SP 5247 §11.1 digest and a GOFIPS140 build
+      # carries the approved-mode marker.
+      - name: FIPS module integrity (SP 5247 §11.1)
+        run: |
+          set -euo pipefail
+          zip="$(go env GOROOT)/lib/fips140/v1.0.0-c2097c7c.zip"
+          echo "daf3614e0406f67ae6323c902db3f953a1effb199142362a039e7526dfb9368b  $zip" | sha256sum -c -
+          cd providers/gofips
+          CGO_ENABLED=1 GOFIPS140=v1.0.0 go build -buildvcs=false -ldflags=-checklinkname=0 -buildmode=c-shared -o /tmp/fips-marker.so .
+          go version -m /tmp/fips-marker.so | awk '$1 == "build" && $2 == "GOFIPS140=v1.0.0-c2097c7c" {found=1} END {exit !found}'
+          echo "approved-mode marker: GOFIPS140=v1.0.0-c2097c7c"
+
+      - name: Load node image
+        run: docker load < dist/node.tar
+
+      # The x509 probe runs inside go-builder
+      - name: Load go-builder image
+        run: docker load < dist/go-builder.tar
+
+      - name: C acceptance suite (host OpenSSL)
+        run: |
+          set -o pipefail
+          cc -o /tmp/pacc providers/gofips/testdata/provider_acceptance.c \
+            $(pkg-config --cflags openssl) $(pkg-config --libs openssl)
+          cd providers/gofips
+          if [ -n "${SHIPPED_SO:-}" ]; then cp "$SHIPPED_SO" /tmp/temperfips.so
+          else CGO_ENABLED=1 GOFIPS140=v1.0.0 go build -ldflags=-checklinkname=0 -buildmode=c-shared -o /tmp/temperfips.so .; fi
+          GOFIPS_SO=/tmp/temperfips.so GODEBUG=fips140=on /tmp/pacc | tee /tmp/gofips-c-acceptance.log
+
+      - name: Node integration + fail-closed runner (in-image)
+        run: |
+          set -o pipefail
+          # The C stages link the OpenSSL 3 compat pair, fetched from a
+          # digest-pinned public image.
+          ./providers/gofips/testdata/fetch-compat-openssl3.sh /tmp/compat-openssl3
+          GOFIPS_LIBCRYPTO_DIR=/tmp/compat-openssl3 \
+            ./providers/gofips/testdata/node-integration/run-node-integration.sh node:local-${{ matrix.goarch }} | tee /tmp/gofips-node-integration.log
+          grep -q "NODE INTEGRATION: ALL STAGES PASSED" /tmp/gofips-node-integration.log
+
+      - name: Cross-provider TLS interop regressions (both directions + KAT)
+        run: |
+          set -o pipefail
+          ./providers/gofips/testdata/node-integration/run-interop-regression.sh node:local-${{ matrix.goarch }} | tee /tmp/gofips-interop.log
+          grep -q "INTEROP REGRESSIONS: ALL PASS" /tmp/gofips-interop.log
+
+      - name: X509_digest(SHA256) routing probe, OpenSSL4 + OpenSSL3 compat ABIs
+        run: |
+          set -o pipefail
+          # OpenSSL 3.5 compat pair; provenance in
+          # providers/gofips/docs/audit/04-build-provenance.md.
+          ./providers/gofips/testdata/fetch-compat-openssl3.sh /tmp/compat-openssl3
+          ./providers/gofips/testdata/node-integration/run-x509-digest.sh node:local-${{ matrix.goarch }} /tmp/compat-openssl3/libcrypto.so.3 | tee /tmp/gofips-x509.log
+          grep -q "X509 DIGEST: ALL STAGES PASSED" /tmp/gofips-x509.log
+
+      - name: Differential repro + regtest (dup/free, registry, race)
+        run: |
+          set -o pipefail
+          REPO_DIR="$PWD"
+          cc -o /tmp/diff-suite providers/gofips/testdata/differential_repro.c \
+            $(pkg-config --cflags openssl) $(pkg-config --libs openssl)
+          cd providers/gofips
+          mkdir -p /tmp/modematrix
+          if [ -n "${SHIPPED_SO:-}" ]; then cp "$SHIPPED_SO" /tmp/modematrix/gofips.so
+          else CGO_ENABLED=1 GOFIPS140=v1.0.0 go build -buildvcs=false \
+            -ldflags=-checklinkname=0 -buildmode=c-shared -o /tmp/modematrix/gofips.so .; fi
+          cd /tmp/modematrix
+          T=0
+          for t in 1 2 3 4 5 6 7 8 9 10 11 12 13; do
+            /tmp/diff-suite /tmp/modematrix "$t" 2>&1 | tee -a /tmp/gofips-differential.log
+            D=$(/tmp/diff-suite /tmp/modematrix "$t" 2>&1 | grep -cE 'DEFECT|REGRESSION' || true)
+            T=$((T+D))
+          done
+          echo "differential suite defects: $T (expect 0)"
+          [ "$T" -eq 0 ]
+          cc -o /tmp/regtest "$REPO_DIR/providers/gofips/testdata/regtest.c" \
+            $(pkg-config --cflags openssl) $(pkg-config --libs openssl) -lpthread
+          GOFIPS_SO=/tmp/modematrix/gofips.so GODEBUG=fips140=on /tmp/regtest
+
+      - name: SHA-3, PBKDF2 and streaming ECDSA (fips140=on and only)
+        run: |
+          set -o pipefail
+          cc -o /tmp/sha3_pbkdf2 providers/gofips/testdata/sha3_pbkdf2.c \
+            $(pkg-config --cflags openssl) $(pkg-config --libs openssl)
+          for mode in on only; do
+            GODEBUG=fips140=$mode /tmp/sha3_pbkdf2 /tmp/modematrix 2>&1 | tee -a /tmp/gofips-sha3-pbkdf2.log
+          done
+          [ "$(grep -c 'SHA3PBKDF2: ALL PASS' /tmp/gofips-sha3-pbkdf2.log)" = 2 ]
+
+      - name: RSA verification, P-384, certificate chains, TLS 1.3 (fips140=on and only)
+        run: |
+          set -o pipefail
+          cc -o /tmp/rsa_p384 providers/gofips/testdata/rsa_p384.c \
+            $(pkg-config --cflags openssl) $(pkg-config --libs openssl)
+          for mode in on only; do
+            GODEBUG=fips140=$mode /tmp/rsa_p384 /tmp/modematrix 2>&1 | tee -a /tmp/gofips-rsa-p384.log
+          done
+          [ "$(grep -c 'RSAP384: ALL PASS' /tmp/gofips-rsa-p384.log)" = 2 ]
+
+      - name: TLS 1.2 KDF, GCM records, handshakes and refusals (fips140=on and only)
+        run: |
+          set -o pipefail
+          cc -o /tmp/tls12 providers/gofips/testdata/tls12.c \
+            $(pkg-config --cflags openssl) $(pkg-config --libs openssl)
+          for mode in on only; do
+            GODEBUG=fips140=$mode /tmp/tls12 /tmp/modematrix 2>&1 | tee -a /tmp/gofips-tls12.log
+          done
+          [ "$(grep -c 'TLS12: ALL PASS' /tmp/gofips-tls12.log)" = 2 ]
+
+      - name: GCM nonce lifecycle (record counter, copies, no caps, concurrency)
+        run: |
+          set -o pipefail
+          cc -o /tmp/guardtest providers/gofips/testdata/guardtest.c \
+            $(pkg-config --cflags openssl) $(pkg-config --libs openssl) -lpthread
+          cd /tmp/modematrix
+          GOFIPS_SO=/tmp/modematrix/gofips.so GODEBUG=fips140=on /tmp/guardtest 2>&1 | tee /tmp/gofips-guardtest.log
+
+      - name: GCM caller contract (release rc + debug-trace attribution)
+        run: |
+          set -o pipefail
+          WS="$PWD"
+          cc -o /tmp/guardunit providers/gofips/testdata/guardunit.c \
+            $(pkg-config --cflags openssl) $(pkg-config --libs openssl)
+          cd /tmp/modematrix
+          GODEBUG=fips140=on /tmp/guardunit /tmp/modematrix 2>&1 | tee /tmp/gofips-guardunit.log
+          cd "$WS"
+          cd providers/gofips
+          CGO_ENABLED=1 GOFIPS140=v1.0.0 go build -tags gofips_debug \
+            -buildvcs=false -ldflags=-checklinkname=0 -buildmode=c-shared -o /tmp/modematrix-debug/gofips.so .
+          cd "$WS"
+          bash providers/gofips/testdata/guardunit-attrib.sh /tmp/modematrix-debug 2>&1 | tee /tmp/gofips-guardunit-attrib.log
+
+      - name: TLS 1.3 GCM (adapter unit tests + real handshakes, fips140=on and only)
+        run: |
+          set -o pipefail
+          WS="$PWD"
+          cd providers/gofips
+          for mode in on only; do
+            echo "== go test, GODEBUG=fips140=$mode" | tee -a /tmp/gofips-tls13gcm.log
+            CGO_ENABLED=1 GOFIPS140=v1.0.0 GODEBUG=fips140=$mode go test -buildvcs=false -ldflags=-checklinkname=0 -count=1 \
+              -run 'TestModuleRefusesRepeatedCounter|TestSealRefusals|TestOpen|TestMatchesGeneralGCM' -v . 2>&1 | tee -a /tmp/gofips-tls13gcm.log
+          done
+          cd "$WS"
+          # Real TLS 1.3 handshakes through libssl with gofips on one or both
+          # ends. fips140=only rejects any non-approved operation.
+          cc -o /tmp/tls13_handshake providers/gofips/testdata/tls13_handshake.c \
+            $(pkg-config --cflags openssl) $(pkg-config --libs openssl)
+          for mode in on only; do
+            echo "== tls13_handshake, GODEBUG=fips140=$mode" | tee -a /tmp/gofips-tls13gcm.log
+            GODEBUG=fips140=$mode /tmp/tls13_handshake /tmp/modematrix 2>&1 | tee -a /tmp/gofips-tls13gcm.log
+          done
+          test "$(grep -c 'TLS13 HANDSHAKE: ALL PASS' /tmp/gofips-tls13gcm.log)" = 2
+
+      - name: Build/mode matrix + release-binary scan
+        run: |
+          set -o pipefail
+          bash providers/gofips/testdata/mode-matrix.sh | tee /tmp/gofips-mode-matrix.log
+          grep -q "release build GOFIPS_DEBUG=1 trace lines: 0 (expect 0)" /tmp/gofips-mode-matrix.log
+          grep -qE "debug build GOFIPS_DEBUG=1 trace lines: [1-9][0-9]* \(expect > 0\)" /tmp/gofips-mode-matrix.log
+
+      - name: EC boundary corpus (scalar encodings, cross-provider round trips)
+        run: |
+          set -o pipefail
+          cc -o /tmp/ecboundary providers/gofips/testdata/ecboundary.c \
+            $(pkg-config --cflags openssl) $(pkg-config --libs openssl)
+          cd /tmp/modematrix
+          GODEBUG=fips140=on /tmp/ecboundary /tmp/modematrix | tee /tmp/gofips-ecboundary.log
+
+      - name: Legacy-ctor routing gate (configured + control shapes, cold process)
+        run: |
+          set -o pipefail
+          bash providers/gofips/testdata/run-legacy-ctor.sh | tee /tmp/gofips-legacyctor.log
+          grep -q "LEGACY-CTOR BOUNDARY: ALL MODES PASSED" /tmp/gofips-legacyctor.log
+
+      - name: Parameter-handling regressions + TLS capability callbacks
+        run: |
+          set -o pipefail
+          # rand-hook needs RAND_set1_random_provider (OpenSSL 3.5+). The host
+          # libcrypto is 3.0.x, so the host run must report rand-hook as skipped,
+          # and a second run against the hash-pinned 3.5 compat pair must
+          # pass every check, rand-hook included.
+          WS="$PWD"
+          cc -o /tmp/audreg providers/gofips/testdata/audreg.c \
+            $(pkg-config --cflags openssl) $(pkg-config --libs openssl) -lpthread
+          cd /tmp/modematrix
+          GODEBUG=fips140=on timeout 120 /tmp/audreg /tmp/modematrix 2>&1 | tee /tmp/gofips-audreg.log | grep -q "ALL PASS"
+          grep -q "SKIP: rand-hook requires RAND_set1_random_provider" /tmp/gofips-audreg.log
+          cd "$WS"
+          ./providers/gofips/testdata/fetch-compat-openssl3.sh /tmp/compat-openssl3-audreg
+          ln -sf libcrypto.so.3 /tmp/compat-openssl3-audreg/libcrypto.so
+          ln -sf libssl.so.3 /tmp/compat-openssl3-audreg/libssl.so
+          cc -o /tmp/audreg-compat providers/gofips/testdata/audreg.c \
+            -I/usr/include -L/tmp/compat-openssl3-audreg -lssl -lcrypto -ldl -lpthread \
+            -Wl,--disable-new-dtags -Wl,-rpath,/tmp/compat-openssl3-audreg
+          GODEBUG=fips140=on timeout 120 /tmp/audreg-compat /tmp/modematrix \
+            2>&1 | tee /tmp/gofips-audreg-compat.log | grep -q "ALL PASS"
+          grep -q "PASS: rand-hook: set1_random_provider accepts gofips" /tmp/gofips-audreg-compat.log
+
+      - name: Panic-containment coverage (inventory + injected-panic suite)
+        run: |
+          set -o pipefail
+          cc -o /tmp/panictest providers/gofips/testdata/panictest.c \
+            $(pkg-config --cflags openssl) $(pkg-config --libs openssl)
+          bash providers/gofips/testdata/coverage-inventory.sh | tee /tmp/gofips-inventory.log
+          bash providers/gofips/testdata/coverage-check.sh | tee /tmp/gofips-coverage.log
+          # Every wired C.int export must be wrapped in opGuard.
+          bash providers/gofips/testdata/guardcheck.sh --selftest | tee /tmp/gofips-guardcheck-selftest.log
+          grep -q "GUARDCHECK SELFTEST: ALL PASS" /tmp/gofips-guardcheck-selftest.log
+          bash providers/gofips/testdata/guardcheck.sh "$GITHUB_WORKSPACE" | tee /tmp/gofips-guardcheck.log
+          grep -q "0 missing" /tmp/gofips-guardcheck.log
+          if grep -q "UNGUARDED C.int" /tmp/gofips-guardcheck.log; then echo "unguarded C.int export found" >&2; exit 1; fi
+          # NULL-data and short-buffer parameter shapes
+          cc -o /tmp/paramshape13 providers/gofips/testdata/paramshape13.c \
+            $(pkg-config --cflags openssl) $(pkg-config --libs openssl)
+          # return_size: 4 for unsigned-int params, 8 for size_t params
+          cc -o /tmp/probe_bits providers/gofips/testdata/probe_bits.c \
+            $(pkg-config --cflags openssl) $(pkg-config --libs openssl)
+          cd /tmp/modematrix
+          GODEBUG=fips140=on /tmp/panictest /tmp/modematrix 2>&1 | tee /tmp/gofips-panictest.log | grep -q "host alive"
+          GODEBUG=fips140=on /tmp/paramshape13 /tmp/modematrix 2>&1 | tee /tmp/gofips-paramshape13.log | grep -q "PARAMSHAPE13: ALL PASS"
+          GOFIPS140=v1.0.0 /tmp/probe_bits /tmp/modematrix 2>&1 | tee /tmp/gofips-probe-bits.log | grep -q "PROBE_BITS: ALL PASS"
+
+      - name: Documented-command clean-checkout gate
+        run: |
+          set -o pipefail
+          bash providers/gofips/testdata/docclean.sh | tee /tmp/gofips-docclean.log
+
+      # Performance evidence per architecture (audit page 07). Recorded, not
+      # a gate: hosted runners are shared, so figures vary run to run.
+      - name: In-image TLS benchmark
+        run: |
+          set -o pipefail
+          GOFIPS_SO="${SHIPPED_SO:-}" ./providers/gofips/testdata/node-integration/run-tls-bench.sh | tee /tmp/gofips-bench.log
+          grep -q 'BENCH-JSON' /tmp/gofips-bench.log
+
+      - name: Upload suite logs
+        if: always()   # a failing gate must still publish its log
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gofips-suite-logs-${{ matrix.arch }}
+          path: |
+            /tmp/gofips-c-acceptance.log
+            /tmp/gofips-node-integration.log
+            /tmp/gofips-interop.log
+            /tmp/gofips-x509.log
+            /tmp/gofips-ecboundary.log
+            /tmp/gofips-legacyctor.log
+            /tmp/gofips-panictest.log
+            /tmp/gofips-paramshape13.log
+            /tmp/gofips-probe-bits.log
+            /tmp/gofips-guardcheck.log
+            /tmp/gofips-guardcheck-selftest.log
+            /tmp/gofips-coverage.log
+            /tmp/gofips-inventory.log
+            /tmp/gofips-docclean.log
+            /tmp/gofips-mode-matrix.log
+            /tmp/gofips-differential.log
+            /tmp/gofips-guardtest.log
+            /tmp/gofips-guardunit.log
+            /tmp/gofips-guardunit-attrib.log
+            /tmp/gofips-tls13gcm.log
+            /tmp/gofips-audreg.log
+            /tmp/gofips-audreg-compat.log
+            /tmp/gofips-sha3-pbkdf2.log
+            /tmp/gofips-rsa-p384.log
+            /tmp/gofips-tls12.log
+            /tmp/gofips-oe.txt
+            /tmp/gofips-shipped.txt
+            /tmp/gofips-bench.log
+          if-no-files-found: warn
+          retention-days: 7
+

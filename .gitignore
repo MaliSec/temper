@@ -1,0 +1,42 @@
+# Local build artifacts
+/dist/
+# Scratch directories the CI workflow steps create
+/dist-rebuild/
+/lockfile-check/
+/pkg-artifacts/
+# melange out-dir: only recipes (packages/<name>/melange.yaml) are ever tracked
+/packages/*/*.apk
+/packages/x86_64/
+/packages/aarch64/
+/local-apk/
+/apk-cache/
+/*.apk
+/*.tar
+/sbom-*.spdx.json
+
+# Signing keys: releases are signed keyless (docs/verifying.md), so there is
+# no project signing key, public or private, to commit. Key files for
+# private key-mode cuts and the per-run melange key pair stay untracked.
+/keys/
+*.key
+*.pem
+/melange.rsa
+/melange.rsa.pub
+
+# Python tooling
+.venv/
+__pycache__/
+*.pyc
+
+# Editor / OS
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Local tool binaries (scripts/install-tools.sh default install dir)
+.bin/
+/.toolbox-cache/
+/.toolbox-ws/
+.cut-keys/
+

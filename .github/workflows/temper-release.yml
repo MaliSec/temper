@@ -1,0 +1,35 @@
+---
+# temper-release: cut a release when a date tag is pushed: YYYY.MM.DD, or
+# YYYY.MM.DD.N for a further release the same day (N = 1, 2, ...).
+# The pipeline, and the signing identity consumers verify against, is
+# temper-release-build.yml; this file only grants it permissions.
+name: temper-release
+
+on:
+  push:
+    tags:
+      - '[0-9][0-9][0-9][0-9].[0-9][0-9].[0-9][0-9]'
+      - '[0-9][0-9][0-9][0-9].[0-9][0-9].[0-9][0-9].[1-9]'
+      - '[0-9][0-9][0-9][0-9].[0-9][0-9].[0-9][0-9].[1-9][0-9]+'
+
+permissions:
+  contents: read
+
+# One release at a time: two release jobs running together could each decide
+# they are newest and move latest and the line tags backwards. GitHub keeps
+# one run waiting; a third tag pushed meanwhile cancels the waiting run.
+# The cancelled run published nothing: re-run it the same UTC day, or push
+# a new .N tag (the release date must be today or yesterday).
+concurrency:
+  group: temper-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    uses: ./.github/workflows/temper-release-build.yml
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write

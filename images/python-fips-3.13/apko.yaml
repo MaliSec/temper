@@ -1,0 +1,52 @@
+---
+# python-fips, Python 3.13 line, published as python-fips:3.13: the
+# python-3.13 image with the gofips OpenSSL provider. hashlib,
+# hmac and ssl run in the Go Cryptographic Module (CMVP #5247); the default
+# and legacy OpenSSL providers are not loaded. See README.md.
+#
+# Keep the base package set, accounts and environment identical to
+# images/python-3.13/apko.yaml (make test checks this)
+contents:
+  keyring:
+    - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+    - melange.rsa.pub
+  repositories:
+    - https://packages.wolfi.dev/os
+    - '@local packages'
+  packages:
+    - wolfi-baselayout
+    - glibc
+    - glibc-locale-posix
+    - libgcc
+    - python-3.13
+    - ca-certificates-bundle
+    - tzdata
+    - temper-gofips@local
+    # Keeps hashlib and hmac inside gofips (BLAKE2, hmac.new); see its recipe.
+    - temper-python-3.13-fips@local
+
+accounts:
+  groups:
+    - groupname: nonroot
+      gid: 65532
+  users:
+    - username: nonroot
+      uid: 65532
+      gid: 65532
+  run-as: 65532
+
+environment:
+  PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+  LANG: C.UTF-8
+  SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt
+  SSL_CERT_DIR: /etc/ssl/certs
+  # No __pycache__ writes, so the image runs on a read-only rootfs.
+  PYTHONDONTWRITEBYTECODE: "1"
+  OPENSSL_CONF: /etc/ssl/openssl-gofips.cnf
+  GODEBUG: fips140=on
+
+entrypoint: {}
+
+archs:
+  - x86_64
+  - aarch64

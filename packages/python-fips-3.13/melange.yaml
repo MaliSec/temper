@@ -1,0 +1,47 @@
+# temper-python-3.13-fips: keeps CPython's hashlib and hmac inside the gofips
+# provider in the python-fips image.
+#   - BLAKE2: CPython implements it itself. _blake2.py (found before
+#     lib-dynload on sys.path) refuses, and the original extension is emptied.
+#   - hmac: the standard module computes HMAC itself in several cases
+#     (pure Python, OpenSSL's legacy HMAC_CTX). hmac.py replaces it and
+#     computes every HMAC through the provider. The stdlib's compiled
+#     hmac is unchecked-hash bytecode, used without reading the source, so
+#     it is emptied: Python then compiles hmac.py.
+#   - _hashlib.py, found before the extension in lib-dynload, loads it and
+#     routes its hmac_new (OpenSSL's legacy HMAC_CTX) through hmac.py.
+package:
+  name: temper-python-3.13-fips
+  version: 0.1.0
+  epoch: 0
+  description: "python-fips: hashlib and hmac only through the Go Cryptographic Module"
+  copyright:
+    - license: Apache-2.0
+  target-architecture:
+    - x86_64
+    - aarch64
+  dependencies:
+    runtime:
+      - python-3.13
+    replaces:
+      - python-3.13-base
+
+environment:
+  contents:
+    keyring:
+      - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+    repositories:
+      - https://packages.wolfi.dev/os
+    packages:
+      - busybox=1.38.0-r3
+
+pipeline:
+  - name: Install
+    runs: |
+      install -Dm644 _blake2.py "${{targets.destdir}}/usr/lib/python3.13/_blake2.py"
+      install -Dm644 hmac.py "${{targets.destdir}}/usr/lib/python3.13/hmac.py"
+      install -Dm644 _hashlib.py "${{targets.destdir}}/usr/lib/python3.13/_hashlib.py"
+      install -d "${{targets.destdir}}/usr/lib/python3.13/__pycache__"
+      : > "${{targets.destdir}}/usr/lib/python3.13/__pycache__/hmac.cpython-313.pyc"
+      d="${{targets.destdir}}/usr/lib/python3.13/lib-dynload"
+      mkdir -p "$d"
+      : > "$d/_blake2.cpython-313-${{build.arch}}-linux-gnu.so"

@@ -1,0 +1,47 @@
+# syntax=docker/dockerfile:1
+# Temper toolbox: the build toolchain in a container, so nothing is installed
+# on the host. Tools come from scripts/install-tools.sh, so the versions and
+# checksum pins are the same as on the host and in CI. The scanners (trivy,
+# grype, syft) are not in the toolbox.
+#
+#   Build:  make toolbox                      (or: docker build -f Dockerfile.toolbox -t temper-toolbox:local .)
+#   Use:    ./scripts/toolbox.sh apko version
+#           ./scripts/toolbox.sh melange build <melange.yaml> --arch x86_64 --namespace local-apk
+#   Shell:  docker run --rm -it -v "$PWD":/work -w /work --entrypoint /bin/sh temper-toolbox:local
+
+# bookworm-slim, multi-arch index pinned by digest
+FROM debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc AS builder
+
+ARG DOCKER_CLI_VERSION=29.7.2
+
+# Docker's published repository signing key fingerprint.
+ARG DOCKER_KEY_FPR=9DC858229FC7DD38854AE2D88D81803C0EBFCD88
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl ca-certificates tar gnupg \
+    && rm -rf /var/lib/apt/lists/*
+
+# Docker CLI only: melange --runner docker builds on the host daemon, because
+# bubblewrap cannot run unprivileged inside Docker. Docker publishes no
+# checksums for its static binaries, so the CLI comes from its signed apt
+# repository; the build fails unless the key matches the fingerprint above.
+RUN curl -sSfL -o /tmp/docker.asc https://download.docker.com/linux/debian/gpg \
+    && gpg --show-keys --with-colons /tmp/docker.asc | awk -F: '$1 == "fpr" {print $10}' | grep -qx "$DOCKER_KEY_FPR" \
+    && gpg --dearmor -o /usr/share/keyrings/docker.gpg /tmp/docker.asc \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker.gpg] https://download.docker.com/linux/debian bookworm stable" \
+        > /etc/apt/sources.list.d/docker.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends "docker-ce-cli=5:${DOCKER_CLI_VERSION}-1~debian.12~bookworm" \
+    && install -m 0755 /usr/bin/docker /usr/local/bin/docker \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY scripts/install-tools.sh /tmp/install-tools.sh
+RUN TOOLS="apko melange cosign crane" INSTALL_DIR=/usr/local/bin /tmp/install-tools.sh
+
+FROM debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc
+# The tools fetch keys and APKINDEX from packages.wolfi.dev over TLS.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /usr/local/bin/apko /usr/local/bin/melange /usr/local/bin/cosign /usr/local/bin/crane /usr/local/bin/docker /usr/local/bin/
+WORKDIR /work

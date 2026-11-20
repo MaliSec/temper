@@ -1,0 +1,25 @@
+# OpenSSL config shipped in the -fips images (package temper-gofips), as
+# /etc/ssl/openssl-gofips.cnf and as the default /etc/ssl/openssl.cnf.
+#
+# gofips is the only provider with cryptographic algorithms; base adds
+# encoders and decoders, needed to load PEM keys and certificates. The
+# default and legacy providers are not loaded, so every crypto fetch
+# resolves to gofips or fails. This is the configuration the audit pack's
+# evidence covers (docs/audit/08-operating-guide.md); keep its effective
+# lines identical to testdata/node-integration/openssl-gofips.cnf.
+
+openssl_conf = openssl_init
+
+[openssl_init]
+providers = provider_sect
+
+[provider_sect]
+gofips = gofips_sect
+base = base_sect
+
+[gofips_sect]
+module = /usr/lib/ossl-modules/gofips.so
+activate = 1
+
+[base_sect]
+activate = 1
