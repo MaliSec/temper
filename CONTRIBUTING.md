@@ -50,7 +50,10 @@ Each `apko.yaml` names package streams (for example `nodejs-26`); its
 Builds and releases use only the lockfile. The packages built here
 (`packages/`) pin their build toolchain in their recipes, so a rebuild
 reproduces the package the `-fips` lockfiles pin; bump those pins, then
-relock, to move them to a newer toolchain.
+relock, to move them to a newer toolchain. Bump a recipe's `epoch` with
+any change that changes its package (its files, its source, or the
+toolchain), so each build of different contents has its own version in
+the SBOMs and release records.
 
 - **Automatic:** the `temper-nightly` workflow relocks every night, opens
   (or updates) one pull request, `relock/automated`, with the package diff,
