@@ -20,6 +20,9 @@
 /keys/
 *.key
 *.pem
+# Test certificates for the VEX checks (tests/vex/), not signing keys.
+!/tests/vex/fixtures/*.key
+!/tests/vex/fixtures/*.pem
 /melange.rsa
 /melange.rsa.pub
 
