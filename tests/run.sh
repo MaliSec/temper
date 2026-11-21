@@ -623,7 +623,7 @@ strip_cnf() { grep -vE '^\s*(#|$)' "$1" | sed 's|GOFIPS_MODULE_PATH|/usr/lib/oss
 # Version-line tags: the line each image gets, and how the release uses it.
 lines_bad=""
 for pair in node=26 node-fips=26 node-builder=26 node-debug=26 node-24=24 node-fips-24=24 node-builder-24=24 \
-            python=3.14 python-fips=3.14 python-3.13=3.13 python-fips-3.13=3.13 go-builder=1.26 static= base-glibc= git=; do
+            python=3.14 python-fips=3.14 python-3.13=3.13 python-fips-3.13=3.13 go-builder=1.26 rust-builder=1.100 static= base-glibc= git=; do
   got=$(./scripts/image-line.sh "${pair%%=*}" 2>/dev/null || echo ERR)
   [ "$got" = "${pair#*=}" ] || lines_bad="$lines_bad ${pair%%=*}:$got"
 done

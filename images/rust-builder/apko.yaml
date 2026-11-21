@@ -1,0 +1,49 @@
+# rust-builder: Rust build-stage image. Build only, never a production runtime.
+# See README.md.
+#
+# rust-1.100 declares no C toolchain, which rustc needs as its linker and
+# crates with C code (the cc crate) need as their compiler, so build-base is
+# listed explicitly. There is no clang, so bindgen does not run here.
+#
+# Build (from the repository root):
+#   apko lock images/rust-builder/apko.yaml --arch x86_64,aarch64 \
+#     --output images/rust-builder/apko.lock.json
+#   apko build images/rust-builder/apko.yaml rust-builder:local dist/rust-builder.tar \
+#     --arch x86_64 --lockfile images/rust-builder/apko.lock.json
+contents:
+  keyring:
+    - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+  repositories:
+    - https://packages.wolfi.dev/os
+  packages:
+    - wolfi-baselayout
+    - ca-certificates-bundle
+    - rust-1.100
+    - cargo-auditable
+    - build-base
+    - bash
+    - git
+    - busybox
+
+accounts:
+  groups:
+    - groupname: nonroot
+      gid: 65532
+  users:
+    - username: nonroot
+      uid: 65532
+      gid: 65532
+  run-as: 65532
+
+environment:
+  PATH: /home/nonroot/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+  SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt
+  SSL_CERT_DIR: /etc/ssl/certs
+  HOME: /home/nonroot
+  CARGO_HOME: /home/nonroot/.cargo
+
+entrypoint: {}
+
+archs:
+  - x86_64
+  - aarch64

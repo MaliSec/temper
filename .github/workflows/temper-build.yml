@@ -179,6 +179,12 @@ jobs:
           for tar in dist/node-fips*.tar dist/python-fips*.tar dist/base-glibc-dev.tar; do docker load < "$tar"; done
           tests/smoke-fips.sh ${{ matrix.docker_arch }}
 
+      - name: Smoke rust-builder
+        run: |
+          set -euo pipefail
+          docker load < dist/rust-builder.tar
+          tests/smoke-rust-builder.sh ${{ matrix.docker_arch }}
+
       # Each VEX statement with evidence, checked in the images that ship its
       # package (the python images, loaded above).
       - name: VEX checks

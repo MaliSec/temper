@@ -17,12 +17,13 @@ upstream license. Examples from the current image family:
 | `busybox` | `base-shell`, builder and debug images | GPL-2.0-only |
 | `nodejs` | `node`, `node-builder`, `node-fips` | MIT |
 | `go` | `go-builder` | BSD-3-Clause |
+| `rust` | `rust-builder` | Apache-2.0 AND MIT |
 | `python` | `python`, `python-fips` | PSF-2.0 |
-| `git` | `git`, `go-builder` | GPL-2.0-or-later (with Perl components under Artistic-1.0-Perl or GPL-1.0-or-later) |
+| `git` | `git`, `go-builder`, `rust-builder` | GPL-2.0-or-later (with Perl components under Artistic-1.0-Perl or GPL-1.0-or-later) |
 | `ca-certificates-bundle` | every image | MPL-2.0 and MIT |
 | `libgcc` | glibc-based images | GPL-3.0-or-later with the GCC runtime exception |
-| `bash`, `make`, `binutils` | `go-builder` | GPL-3.0-or-later |
-| `gcc` | `go-builder` | GPL-3.0-or-later with the GCC runtime exception |
+| `bash`, `make`, `binutils` | `go-builder`, `rust-builder` | GPL-3.0-or-later |
+| `gcc` | `go-builder`, `rust-builder` | GPL-3.0-or-later with the GCC runtime exception |
 | `npm` | `node-builder` | Artistic-2.0 |
 | `temper-gofips` | `node-fips`, `python-fips` | Apache-2.0; contains the Go standard library and runtime (BSD-3-Clause) |
 | `temper-python-3.14-fips`, `temper-python-3.13-fips` | `python-fips` | Apache-2.0 |

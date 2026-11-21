@@ -49,8 +49,8 @@ the default shape, not an add-on. This is what satisfies §1.3 and §1.5. The
 shell tier is the only set of images that intentionally includes a shell:
 
 - `base-shell` and the `:debug` variants, for troubleshooting only.
-- The builder images (`base-glibc-dev`, `go-builder`, `node-builder`), for
-  build stages only.
+- The builder images (`base-glibc-dev`, `go-builder`, `node-builder`,
+  `rust-builder`), for build stages only.
 
 None of them is a production runtime base image.
 
