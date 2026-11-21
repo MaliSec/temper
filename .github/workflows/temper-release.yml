@@ -33,3 +33,27 @@ jobs:
       id-token: write
       attestations: write
       artifact-metadata: write
+
+  # Rebuild the trust center from the release just published. The token is
+  # a GitHub App's that is installed only on MaliSec/trust with Actions
+  # access only; its key is in the trust-dispatch environment, which only
+  # date tags can deploy from. A failure here leaves the release published.
+  notify-trust:
+    needs: release
+    runs-on: ubuntu-24.04
+    environment: trust-dispatch
+    permissions: {}
+    steps:
+      - name: App token
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ vars.TRUST_DISPATCH_APP_ID }}
+          private-key: ${{ secrets.TRUST_DISPATCH_APP_KEY }}
+          owner: MaliSec
+          repositories: trust
+          permission-actions: write
+      - name: Rebuild the trust center
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: gh workflow run trust-center.yml -R MaliSec/trust
