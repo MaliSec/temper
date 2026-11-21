@@ -9,10 +9,13 @@
 #     it is emptied: Python then compiles hmac.py.
 #   - _hashlib.py, found before the extension in lib-dynload, loads it and
 #     routes its hmac_new (OpenSSL's legacy HMAC_CTX) through hmac.py.
+#   - sitecustomize.py makes multiprocessing default to forkserver, as
+#     Python 3.14 does: a fork()ed child can hang in the provider's Go
+#     runtime if another thread was inside it at the fork.
 package:
   name: temper-python-3.13-fips
   version: 0.1.0
-  epoch: 0
+  epoch: 1
   description: "python-fips: hashlib and hmac only through the Go Cryptographic Module"
   copyright:
     - license: Apache-2.0
@@ -40,6 +43,7 @@ pipeline:
       install -Dm644 _blake2.py "${{targets.destdir}}/usr/lib/python3.13/_blake2.py"
       install -Dm644 hmac.py "${{targets.destdir}}/usr/lib/python3.13/hmac.py"
       install -Dm644 _hashlib.py "${{targets.destdir}}/usr/lib/python3.13/_hashlib.py"
+      install -Dm644 sitecustomize.py "${{targets.destdir}}/usr/lib/python3.13/sitecustomize.py"
       install -d "${{targets.destdir}}/usr/lib/python3.13/__pycache__"
       : > "${{targets.destdir}}/usr/lib/python3.13/__pycache__/hmac.cpython-313.pyc"
       d="${{targets.destdir}}/usr/lib/python3.13/lib-dynload"
