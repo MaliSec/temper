@@ -96,6 +96,23 @@ A connection fails when the server:
 
 `tests/smoke-python-fips.py` checks the served and refused lists above.
 
+## fork()
+
+The provider runs in a Go runtime inside the process, which does not
+survive `fork()` without `exec`: a child that uses crypto can hang if
+another thread was inside the provider at the moment of the fork. A child
+forked while no other thread uses crypto is not affected.
+
+- `multiprocessing` defaults to `forkserver` on both lines (Python 3.14
+  does; on 3.13 the image sets it). `set_start_method("fork")` brings the
+  risk back.
+- Servers that fork workers after loading the application (gunicorn
+  `--preload`, Celery's prefork pool, uWSGI) are affected if threads use
+  crypto while workers are forked. Load the application in each worker
+  instead, or start no threads before forking.
+- Node.js is not affected: `child_process` and `cluster` start new
+  processes.
+
 ## Tags
 
 Two lines are published in this repository: 3.14 (the newest stable line, this
