@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # matrix.sh: the provider suites against whichever OpenSSL this container
 # provides; one summary line per suite (E-38). run.sh runs it on OpenSSL
-# 3.0.13 (Ubuntu 24.04), 3.5.7 (Debian), 3.6.5 (Wolfi) and 4.0.3
+# 3.0.13 (Ubuntu 24.04), 3.5 (Debian's current), 3.6.5 (Wolfi) and 4.0.3
 # (gofips-capture:local). With DUAL_OPENSSL_INCLUDE (OpenSSL 4 headers; the
 # container has libcrypto.so.3 and libcrypto.so.4), it also runs
 # dual_openssl.c against a gofips.so built as the images ship it (E-44).

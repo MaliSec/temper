@@ -69,7 +69,7 @@ last_updated: 2026-11-19
   (E-42).
 - With OpenSSL 3.0 under `GODEBUG=fips140=only`, certificate chains do not
   verify: Go refuses SHA-1, libcrypto then has no certificate fingerprints,
-  and OpenSSL 3.0.13 builds no chain without them. OpenSSL 3.5.7, 3.6.5 and
+  and OpenSSL 3.0.13 builds no chain without them. OpenSSL 3.5, 3.6.5 and
   4.0.3 do (E-38, note 3). The supported configuration (`fips140=on`) is not
   affected.
 - OpenSSL's deprecated `HMAC_CTX` API composes HMAC in libcrypto from

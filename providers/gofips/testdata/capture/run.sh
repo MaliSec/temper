@@ -44,7 +44,7 @@ docker pull -q "$GOLANG_IMAGE" >/dev/null
 docker pull -q "$UBUNTU_IMAGE" >/dev/null
 docker pull -q "$WOLFI_IMAGE" >/dev/null
 
-say "captures: host suites, arm64, parity, OpenSSL 3.0.13 / 3.5.7 / 3.6.5 / 4.0.3 matrix (parallel)"
+say "captures: host suites, arm64, parity, OpenSSL 3.0.13 / 3.5 / 3.6.5 / 4.0.3 matrix (parallel)"
 docker run --rm --network host "${U[@]}" -e SHARED="$W/shared" -v "$W/shared:$W/shared" \
   -v /var/run/docker.sock:/var/run/docker.sock -v "$REPO:/src:ro" -v "$W/compat:/compat:ro" \
   -v "$W/out:/out" -v "$HERE/host.sh:/run.sh:ro" gofips-capture:local bash /run.sh > "$W/host.log" 2>&1 &
@@ -60,7 +60,7 @@ docker run --rm "${M[@]}" gofips-capture:local bash /matrix.sh > "$W/matrix-4.0.
 pids+=("$!")
 docker run --rm "${M[@]}" "$GOLANG_IMAGE" bash -c \
   'apt-get update -qq >/dev/null && apt-get install -y -qq libssl-dev pkg-config openssl >/dev/null 2>&1; bash /matrix.sh' \
-  > "$W/matrix-3.5.7.txt" 2>&1 &
+  > "$W/matrix-3.5.txt" 2>&1 &
 pids+=("$!")
 docker run --rm "${M[@]}" -e GO_TGZ_SHA256="$GO_TGZ_SHA256" "$UBUNTU_IMAGE" bash -c '
   apt-get update -qq >/dev/null && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl ca-certificates gcc libc6-dev libssl-dev pkg-config openssl >/dev/null 2>&1

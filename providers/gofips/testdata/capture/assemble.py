@@ -121,13 +121,24 @@ MATRIX_ROWS = ["GOFIPS140 marker", "go test fips140=on", "go test fips140=only",
                "tls12 fips140=only", "s_client -groups P-256", "config preference"]
 MATRIX_OK = re.compile(r"ALL PASS|ALL CHECKS PASSED|^0 defects$|^TLS 1\.3 handshake completed|"
                        r"^[1-9][0-9]* pass, 0 fail$|^GOFIPS140=v1\.0\.0-c2097c7c$")
-MATRIX_VERSIONS = ("3.0.13", "3.5.7", "3.6.5", "4.0.3")
+# A label with two parts ("3.5") is a release series: Debian ships only its
+# newest patch release, which the header must name (openssl 3.5.N).
+MATRIX_VERSIONS = ("3.0.13", "3.5", "3.6.5", "4.0.3")
+
+
+def ran(v, t):
+    """The OpenSSL version a matrix file ran against, if it is the label's."""
+    m = re.match(r"openssl (\d+\.\d+\.\d+),", t)
+    if not m:
+        return None
+    got = m.group(1)
+    return got if (got == v or (v.count(".") == 1 and got.startswith(v + "."))) else None
 # OpenSSL 3 and 4 in one process (E-44) runs only where both are installed.
 DUAL_VERSION = "3.6.5"
 for v in MATRIX_VERSIONS:
     m = W / f"matrix-{v}.txt"
     t = m.read_text() if m.exists() else ""
-    if not t.startswith(f"openssl {v},"):
+    if not ran(v, t):
         bad.append(f"{m.name}: ran against {t.splitlines()[0] if t else 'nothing'}, not OpenSSL {v}")
     if re.search(r"FAIL|MISSING|failed [1-9]|compile FAILED|BUILD FAILED", t):
         bad.append(f"{m.name}: failures")
@@ -359,7 +370,8 @@ Captured {DATE}, go1.26.11, OpenSSL 4.0.3, release build.
 """ + "".join(f"   {l}\n" for l in bad))
 
 # ---- OpenSSL version matrix (E-38) ----
-mats = {v: (W / f"matrix-{v}.txt").read_text() for v in MATRIX_VERSIONS}
+mats = {ran(v, t) or v: t for v in MATRIX_VERSIONS for t in [(W / f"matrix-{v}.txt").read_text()]}
+DEB = next(v for v in mats if v.startswith("3.5."))
 
 
 def cell(text, key):
@@ -392,11 +404,11 @@ first_use = {v: re.search(r"first-use: .*\((\d+/\d+) rounds failed\)", mats[v]).
 write(T / "openssl-versions-check.txt", f"""Provider by OpenSSL version (E-38)
 Captured {DATE} from this repository's tree.
 Toolchain: go1.26.11 (golang:1.26.11, ubuntu:24.04 and wolfi-base containers)
-OpenSSL: 3.0.13 (Ubuntu 24.04), 3.5.7 (Debian), 3.6.5 (Wolfi, the
+OpenSSL: 3.0.13 (Ubuntu 24.04), {DEB} (Debian's current 3.5), 3.6.5 (Wolfi, the
 libcrypto.so.3 the node images ship), 4.0.3 (built from the verified
 release tarball)
 
-Results                         3.0.13         3.5.7          3.6.5          4.0.3
+Results                         """ + "".join(f"{v:<15}" for v in mats).rstrip() + f"""
   GOFIPS140 marker              v1.0.0-c2097c7c (all)
 {table}
   (1) Two checks skipped by design below OpenSSL 3.5: rand-hook needs
@@ -407,7 +419,7 @@ Results                         3.0.13         3.5.7          3.6.5          4.0
       with gofips as the client and the group named "P-256".
   (3) Chain and TLS cases skipped: under fips140=only Go refuses SHA-1,
       so libcrypto has no certificate fingerprints, and OpenSSL 3.0.13
-      builds no certificate chain without them (3.5.7, 3.6.5 and 4.0.3 do).
+      builds no certificate chain without them (3.5, 3.6.5 and 4.0.3 do).
   (4) Needs libcrypto.so.3 and libcrypto.so.4 in one process, as in the
       node images; only the Wolfi container has both. OpenSSL 3.6.5 and
       4.0.3 each load the same gofips.so, built against the OpenSSL 4.0.3

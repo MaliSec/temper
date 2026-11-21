@@ -22,7 +22,7 @@ suites build and run in containers.
 | `host.sh` | `gofips-capture:local` (Go 1.26.11, OpenSSL 4.0.3, Docker CLI on the host socket) | host suites, Node integration, interop, benchmark, E-27 reproduction |
 | `arm64.sh` | `golang:1.26.11` with Debian's arm64 cross toolchain and OpenSSL, run under `qemu-aarch64` | arm64 functional record (E-04, E-12), paramshape13 ABI 3 |
 | `parity.sh` | `gofips-capture:local` with the genuine FIPS provider | official FIPS provider parity (E-36), paramshape13 ABI 1-2 |
-| `matrix.sh` | Ubuntu 24.04 (OpenSSL 3.0.13), Debian (3.5.7), `gofips-capture:local` (4.0.3) | OpenSSL version matrix (E-38) |
+| `matrix.sh` | Ubuntu 24.04 (OpenSSL 3.0.13), Debian (its current 3.5), `gofips-capture:local` (4.0.3) | OpenSSL version matrix (E-38) |
 
 Inputs fetched and verified on the way: OpenSSL 4.0.3 (release tarball
 sha256), the Docker CLI (signed apt repository, key fingerprint pinned),

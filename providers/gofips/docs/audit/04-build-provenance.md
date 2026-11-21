@@ -39,7 +39,7 @@ different toolchain or environment differs.
 - The provider object has zero libcrypto-namespaced undefined symbols
   (`nm -D --undefined-only`); its only `DT_NEEDED` is `libc.so.6` (E-23).
   No libcrypto link, so one object serves OpenSSL 3.x and 4.x.
-- Verified loads: OpenSSL 3.0.13, 3.5.7, 3.6.5 and 4.0.3 (E-38), the
+- Verified loads: OpenSSL 3.0.13, 3.5, 3.6.5 and 4.0.3 (E-38), the
   Temper node image's OpenSSL 4.0.3 (libcrypto.so.4, E-14), the compat
   pair's OpenSSL 3.5.9 (libcrypto.so.3, E-01), and OpenSSL 3.6.5 and 4.0.3
   in one process sharing one `gofips.so` (E-44).
@@ -63,13 +63,9 @@ directory.
 | libcrypto.so.3 | 09a28b8d2f7a70b462ec1a7b2ca53956c74d834879c6e62ddb1a159c54ba7f18 | arm64, OpenSSL 3.5.9 |
 | libssl.so.3 | b9398eca5e54975a3dbc926657cb6e0fda6d70777ed777d7e72f0d75a9bc507a | arm64, OpenSSL 3.5.9 |
 
-The arm64 qemu evidence (E-12) uses Debian's arm64 OpenSSL 3.5.7
-(libssl3t64:arm64 3.5.7-1~deb13u3):
-
-| File | SHA256 |
-|---|---|
-| libcrypto.so.3 (aarch64) | 809909371a1db7d2b9cac4c2fa2eff63eb6169d5979416d94155955a7ad32516 |
-| libssl.so.3 (aarch64) | b3b9a479537bded757b818bb787413d8f8f636135e6546c84e90688eca1dc842 |
+The arm64 qemu evidence (E-12) uses Debian's current arm64 OpenSSL 3.5;
+arm64-evidence.txt records the exact package version it ran against
+(libssl3t64:arm64).
 
 ## Ownership and licensing
 

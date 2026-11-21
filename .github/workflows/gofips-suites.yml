@@ -270,11 +270,16 @@ jobs:
           # libcrypto is 3.0.x, so the host run must report rand-hook as skipped,
           # and a second run against the hash-pinned 3.5 compat pair must
           # pass every check, rand-hook included.
+          # Each run is under a watchdog: a run still going after 110s has its
+          # thread stacks logged before it is killed.
           WS="$PWD"
+          W="$WS/providers/gofips/testdata/run-with-watchdog.sh"
           cc -o /tmp/audreg providers/gofips/testdata/audreg.c \
             $(pkg-config --cflags openssl) $(pkg-config --libs openssl) -lpthread
           cd /tmp/modematrix
-          GODEBUG=fips140=on timeout 120 /tmp/audreg /tmp/modematrix 2>&1 | tee /tmp/gofips-audreg.log | grep -q "ALL PASS"
+          GODEBUG=fips140=on "$W" 110 /tmp/gofips-audreg.log /tmp/audreg /tmp/modematrix \
+            || { cat /tmp/gofips-audreg.log; exit 1; }
+          grep -q "ALL PASS" /tmp/gofips-audreg.log
           grep -q "SKIP: rand-hook requires RAND_set1_random_provider" /tmp/gofips-audreg.log
           cd "$WS"
           ./providers/gofips/testdata/fetch-compat-openssl3.sh /tmp/compat-openssl3-audreg
@@ -283,8 +288,9 @@ jobs:
           cc -o /tmp/audreg-compat providers/gofips/testdata/audreg.c \
             -I/usr/include -L/tmp/compat-openssl3-audreg -lssl -lcrypto -ldl -lpthread \
             -Wl,--disable-new-dtags -Wl,-rpath,/tmp/compat-openssl3-audreg
-          GODEBUG=fips140=on timeout 120 /tmp/audreg-compat /tmp/modematrix \
-            2>&1 | tee /tmp/gofips-audreg-compat.log | grep -q "ALL PASS"
+          GODEBUG=fips140=on "$W" 110 /tmp/gofips-audreg-compat.log /tmp/audreg-compat /tmp/modematrix \
+            || { cat /tmp/gofips-audreg-compat.log; exit 1; }
+          grep -q "ALL PASS" /tmp/gofips-audreg-compat.log
           grep -q "PASS: rand-hook: set1_random_provider accepts gofips" /tmp/gofips-audreg-compat.log
 
       - name: Panic-containment coverage (inventory + injected-panic suite)

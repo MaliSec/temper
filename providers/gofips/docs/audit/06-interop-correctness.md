@@ -89,7 +89,7 @@ measures keep them in gofips:
   gofips also registers MD5 as a refused row: a fetch resolves to it and
   every entry point fails. On OpenSSL 4 the row is not registered.
 
-`config_pref.c` (E-45) checks both on OpenSSL 3.0.13, 3.5.7, 3.6.5 and
+`config_pref.c` (E-45) checks both on OpenSSL 3.0.13, 3.5, 3.6.5 and
 4.0.3 with the config the images ship. An application that names another
 provider in its own property query (`provider=base`) chooses it; that is
 outside the claim, like loading another provider.
