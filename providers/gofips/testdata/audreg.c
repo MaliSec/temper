@@ -63,6 +63,7 @@ static int f10_skipped = 0;
 
 static OSSL_LIB_CTX *G, *D;
 static const char *g_search_dir;
+static int run_child(const char *name);
 static OSSL_PROVIDER *gprov;
 static OSSL_PROVIDER *dprov;
 static int fails = 0;
@@ -268,33 +269,13 @@ static void case_kdf_life(void) {
     /* kdf-life/e/kdf-life/f: the default's reset clears the mode, so a param-less
      * derive after reset is refused. Forked so a panic cannot kill the
      * suite. */
-    pid_t pid = fork();
-    if (pid == 0) {
-        EVP_KDF_CTX *p6 = NULL;
-        if (!t13k_ctx(G, 1, 0, &p6)) _exit(9);
-        EVP_KDF_CTX_reset(p6);
-        unsigned char g6[32];
-        int s6 = t13k_derive(p6, g6, 32);
-        EVP_KDF_CTX_free(p6);
-        _exit(s6 == 0 ? 0 : 10);
-    }
-    int st = 0; waitpid(pid, &st, 0);
+    int st = run_child("kdf-life-e");
     int alive = WIFEXITED(st) && WEXITSTATUS(st) == 0;
     CHECK(alive, "kdf-life/e: param-less derive after reset is REFUSED on gofips (rc=0, matches the default's cleared-mode reset)");
     if (!alive) printf("  kdf-life/e detail: exited=%d signal=%d rc=%d\n",
                        WIFEXITED(st), WIFSIGNALED(st) ? WTERMSIG(st) : -1,
                        WIFEXITED(st) ? WEXITSTATUS(st) : -1);
-    pid = fork();
-    if (pid == 0) {
-        EVP_KDF_CTX *p7 = NULL;
-        if (!t13k_ctx(D, 1, 0, &p7)) _exit(9);
-        EVP_KDF_CTX_reset(p7);
-        unsigned char g7[32];
-        int s7 = t13k_derive(p7, g7, 32);
-        EVP_KDF_CTX_free(p7);
-        _exit(s7 == 0 ? 0 : 10);
-    }
-    waitpid(pid, &st, 0);
+    st = run_child("kdf-life-f");
     alive = WIFEXITED(st) && WEXITSTATUS(st) == 0;
     CHECK(alive, "kdf-life/f: control - the default refuses a param-less derive after reset (rc=0)");
     EVP_KDF_CTX_free(p3);
@@ -402,10 +383,7 @@ static void f9child(void) {
     _exit(0);
 }
 static void case_bn_null(void) {
-    pid_t pid = fork();
-    if (pid == 0) f9child();
-    int st = 0;
-    waitpid(pid, &st, 0);
+    int st = run_child("bn-null-a");
     int alive = WIFEXITED(st) && WEXITSTATUS(st) == 0;
     CHECK(alive,
           "bn-null/a: NULL-buffer nonzero-size BN get_params: child exited 0 (no panic/abort, needed size reported)");
@@ -413,22 +391,7 @@ static void case_bn_null(void) {
                        WIFEXITED(st), WIFSIGNALED(st) ? WTERMSIG(st) : -1,
                        WIFEXITED(st) ? WEXITSTATUS(st) : -1);
     /* size query shape: NULL + 0 */
-    pid = fork();
-    if (pid == 0) {
-        EVP_PKEY *gk = EVP_PKEY_Q_keygen(G, NULL, "EC", "prime256v1");
-        if (!gk) _exit(9);
-        OSSL_PARAM q[2];
-        q[0].key = OSSL_PKEY_PARAM_PRIV_KEY;
-        q[0].data_type = OSSL_PARAM_UNSIGNED_INTEGER;
-        q[0].data = NULL;
-        q[0].data_size = 0;
-        q[0].return_size = 0;
-        q[1] = OSSL_PARAM_construct_end();
-        int r = EVP_PKEY_get_params(gk, q);
-        if (r != 1 || q[0].return_size != 32) _exit(10);
-        _exit(0);
-    }
-    waitpid(pid, &st, 0);
+    st = run_child("bn-null-b");
     alive = WIFEXITED(st) && WEXITSTATUS(st) == 0;
     CHECK(alive, "bn-null/b: NULL+0 size-query shape: child exited 0, needed size reported");
 }
@@ -655,12 +618,61 @@ static void tlscaps(void) {
     CHECK(rs == 1 && sfound, "TLS caps: the TLS-SIGALG callback exposes ecdsa_secp256r1_sha256 (0x0403)");
 }
 
+/* ---- Checks that must not take the suite down with them run in a child.
+ * The child is this program re-executed (audreg <dir> --child <name>), not
+ * a fork that carries on: a process that has loaded gofips holds a Go
+ * runtime, and a fork() child that calls into it can block forever on a
+ * lock another runtime thread held at the fork. ---- */
+static int run_child(const char *name) {
+    pid_t pid = fork();
+    if (pid == 0) {
+        execl("/proc/self/exe", "audreg", g_search_dir, "--child", name, (char *)NULL);
+        _exit(127);
+    }
+    int st = 0;
+    waitpid(pid, &st, 0);
+    return st;
+}
+
+static int child_kdf_life(OSSL_LIB_CTX *ctx) {
+    EVP_KDF_CTX *c = NULL;
+    if (!t13k_ctx(ctx, 1, 0, &c)) return 9;
+    EVP_KDF_CTX_reset(c);
+    unsigned char g[32];
+    int s = t13k_derive(c, g, 32);
+    EVP_KDF_CTX_free(c);
+    return s == 0 ? 0 : 10;
+}
+
+static int child_bn_null_b(void) {
+    EVP_PKEY *gk = EVP_PKEY_Q_keygen(G, NULL, "EC", "prime256v1");
+    if (!gk) return 9;
+    OSSL_PARAM q[2];
+    q[0].key = OSSL_PKEY_PARAM_PRIV_KEY;
+    q[0].data_type = OSSL_PARAM_UNSIGNED_INTEGER;
+    q[0].data = NULL;
+    q[0].data_size = 0;
+    q[0].return_size = 0;
+    q[1] = OSSL_PARAM_construct_end();
+    int r = EVP_PKEY_get_params(gk, q);
+    return (r != 1 || q[0].return_size != 32) ? 10 : 0;
+}
+
+static int run_child_case(const char *name) {
+    if (strcmp(name, "kdf-life-e") == 0) return child_kdf_life(G);
+    if (strcmp(name, "kdf-life-f") == 0) return child_kdf_life(D);
+    if (strcmp(name, "bn-null-a") == 0) f9child(); /* exits */
+    if (strcmp(name, "bn-null-b") == 0) return child_bn_null_b();
+    return 2;
+}
+
 int main(int argc, char **argv) {
     g_search_dir = argv[1];
     G = OSSL_LIB_CTX_new(); D = OSSL_LIB_CTX_new();
     dprov = OSSL_PROVIDER_load(D, "default");
     OSSL_PROVIDER_set_default_search_path(G, argv[1]);
     if (!(gprov = OSSL_PROVIDER_load(G, "gofips"))) { printf("LOAD FAIL\n"); return 3; }
+    if (argc == 4 && strcmp(argv[2], "--child") == 0) _exit(run_child_case(argv[3]));
     case_octet_buf(); case_keygen_race(); case_drbg_split(); case_kdf_salt(); case_kdf_life(); case_bn_priv(); case_bn_null(); case_rand_hook(); case_point_format(); case_names(); case_first_use(); tlscaps();
     if (f10_skipped)
         printf("AUDREG: rand-hook skipped (the running libcrypto predates RAND_set1_random_provider, OpenSSL >= 3.5; run the rand-hook block against a 3.5+ pair for that coverage)\n");
