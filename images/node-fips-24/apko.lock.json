@@ -2,14 +2,14 @@
   "version": "v1",
   "config": {
     "name": "images/node-fips-24/apko.yaml",
-    "checksum": "sha256-KB3vwcpvPRoSCyY9dJC9Z7HKTssQU7VDN6TQdnMTZoE="
+    "checksum": "sha256-lkdSUbLPKCZEo1FWjWKX//t+htc706lpDpjSPd96TAI="
   },
   "contents": {
     "keyring": [
       {
         "name": "melange.rsa.pub",
         "url": "melange.rsa.pub",
-        "content": "-----BEGIN PUBLIC KEY-----\nMIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAxXGOFj8NhuWF1+/iwB8N\nrP+y9ilIFjQPwPQIPJtBhFq5BGdFgUqAwSSadMTMjf4WXkRN8qvxBivbkqKR8v9B\nQbTJF0dgr53C00mOM8Sz9WRcCWJpYMut77bGxwSQZfDsZXy/4Eez8/NAURE7lqIE\nMjzppFf78SReIjtnhQ6YGGCF9FZIK18n+O5ibFkrwbyX5UEEA47nuJAHwWawFNPn\nuo+YONhQAGjePQaw6Rjn1sak4sDbWEUyMUz99tl1LC4m8kishsCjDI+9/dyz32sl\nUQ7TJx+57v8+fRj9cw+Fqk1+TAS/iYc5kE+VpPtJqAITbTj3Bjqh/iLbtj+xT2Mr\nFnTpDkP6fz28JzEJx/FpsrRUiSWEwcjsf6c5gM8sQdF7XUUUjGkMn3CgQYje25Aq\ntWtmsYRF3HwyN+VSW5WBWNRrj4yf0ZCzJ5u414UhPAEQwmePJVypfU1WrpGh2OUe\nC9MdDfKhKXXW/hJ/u4uDeWXtOo6gvN1EpOBjy6MBQecqYQ8135xXG/UWrvld9zZu\nPvfGG7AXDYufFPtopAiSsCCFXakJGtn4eEnsaJeBNuKB6jb6hK4xz+ZDfxww59xn\n/56QH2iJ3tSbc9ykemmjcO6SyteXOs/ITXGaMJC7epu6BJ2wSygVXhTMHpDcwpdf\nPa9qK/kElaZ4J36Gktf2ye0CAwEAAQ==\n-----END PUBLIC KEY-----\n"
+        "content": "-----BEGIN PUBLIC KEY-----\nMIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAzhsh9gAlwuHqGcUPnJUa\nvjyeg7Y9OyobtH0d39udyuCrOZ9/mtk6PP+/EJ5HrChFeMh2Mfk4nzRrdJo0HKnf\n+onOoIZgSekeLRE/KHNY9IY6RzgBTH2+zey+StOcv5X+5+FxAvw7VeG33cJ5N7nG\nYuU/Gv07XT4q8dBm/z4v1NHFLYIppP7tk3d6NRIGhNwVCvV/H+7pNTEK99jh+iTU\nJVFDva8mUp0riSjbxImplqcjVA0yd9DAbtPCedpWYt2t6XM2Q+C1CDxEEf1xEzRw\nYD6LHZlav7igU2UEX5yl1dZ+sWRURRc8ehqhvxuoY5XIDRy+M9YkopgF6iKuBqjR\noajiqaLE9oDcAdHcoU/ktUZO35bVCtQTZZwTxpUTZ5AEX/P7LIwRz0Pn7Zn43+41\nLWjzqhuwom3ik4BsGEIpnJ6gDe8Z+2HrYx0dAh4jhkkARh+F6wFlg6Q/IOCI94Lh\nc+4+vuxYR/DXGSvQrJZ/Y31BDWR41PjorupxN/OZy78nPLiLMbSYL+vVsfeIBGb3\nmWzW1/dqs99zDC4azcyA3HaS57HL0Ih4xV1f1zDOliZu8tPur/RorFE15xSLfKJZ\na1K3+8AvTIlegV9RN5nU6pvjirNBLzQ42CpCHXleaBhzVsYs0kqSQZk2Z1rseJLU\nT3ruFxu+YzMEOhjoPQ23PlUCAwEAAQ==\n-----END PUBLIC KEY-----\n"
       },
       {
         "name": "packages.wolfi.dev/os/wolfi-signing.rsa.pub",
@@ -423,23 +423,61 @@
         "checksum": "Q1iU6JcZjHyQtwiwUmZSWvVUhXmeY="
       },
       {
+        "name": "openssl-3.6-libcrypto",
+        "url": "https://packages.wolfi.dev/os/x86_64/openssl-3.6-libcrypto-3.6.5-r6.apk",
+        "version": "3.6.5-r6",
+        "architecture": "x86_64",
+        "signature": {
+          "range": "",
+          "checksum": ""
+        },
+        "control": {
+          "range": "bytes=0-22632",
+          "checksum": "sha1-ioZ+4eSEDmHV//QoL/GOlHfwAiQ="
+        },
+        "data": {
+          "range": "bytes=22633-2447307",
+          "checksum": "sha256-2cZygxLWpfazXqm66TSCS+WsdZSug73mKrLN8H87PS4="
+        },
+        "checksum": "Q1ioZ+4eSEDmHV//QoL/GOlHfwAiQ="
+      },
+      {
+        "name": "openssl-3.6-libssl",
+        "url": "https://packages.wolfi.dev/os/x86_64/openssl-3.6-libssl-3.6.5-r6.apk",
+        "version": "3.6.5-r6",
+        "architecture": "x86_64",
+        "signature": {
+          "range": "",
+          "checksum": ""
+        },
+        "control": {
+          "range": "bytes=0-22640",
+          "checksum": "sha1-wn+6m6IEFLD8t02ntk2UofPc7go="
+        },
+        "data": {
+          "range": "bytes=22641-541507",
+          "checksum": "sha256-r4lM/NJ4G6K3+SwpmiHhmRBnN+DGcAZhYeOru9bqyFM="
+        },
+        "checksum": "Q1wn+6m6IEFLD8t02ntk2UofPc7go="
+      },
+      {
         "name": "temper-gofips",
         "url": "packages/x86_64/temper-gofips-0.1.0-r0.apk",
         "version": "0.1.0-r0",
         "architecture": "x86_64",
         "signature": {
-          "range": "bytes=0-648",
-          "checksum": "sha1-+hn/jKP+kWImGj2TwiU6TUUP3aU="
+          "range": "bytes=0-644",
+          "checksum": "sha1-jkRAUaDsDtAz31NtSoysXboNnfU="
         },
         "control": {
-          "range": "bytes=649-2408",
-          "checksum": "sha1-bJps5YfVMJcHBvWF7rjFd3pZi0E="
+          "range": "bytes=645-2401",
+          "checksum": "sha1-aKNKn5PvAZtUCVMxYYDuODsgU40="
         },
         "data": {
-          "range": "bytes=2409-3020587",
-          "checksum": "sha256-SXoHYICj3LFbldmhxdy+ueZ1sDUIdbkdsZdLYLX6ssk="
+          "range": "bytes=2402-3021733",
+          "checksum": "sha256-rscOOocnIizc5YakZN7ucfQkbG248PycFSwKZB9gn9k="
         },
-        "checksum": "Q1bJps5YfVMJcHBvWF7rjFd3pZi0E="
+        "checksum": "Q1aKNKn5PvAZtUCVMxYYDuODsgU40="
       },
       {
         "name": "temper-node-fips",
@@ -860,23 +898,61 @@
         "checksum": "Q1NnlzIJLs06VDCFKT3tBNV1Rj/tA="
       },
       {
+        "name": "openssl-3.6-libcrypto",
+        "url": "https://packages.wolfi.dev/os/aarch64/openssl-3.6-libcrypto-3.6.5-r6.apk",
+        "version": "3.6.5-r6",
+        "architecture": "aarch64",
+        "signature": {
+          "range": "",
+          "checksum": ""
+        },
+        "control": {
+          "range": "bytes=0-22670",
+          "checksum": "sha1-JVIcRZwJ9hlJ6WGvIcbDmtp5d4E="
+        },
+        "data": {
+          "range": "bytes=22671-2193881",
+          "checksum": "sha256-iSmmeSF/K6aLFaFPoR+oAJ5zxJ5YlFj80hbrZJTKgII="
+        },
+        "checksum": "Q1JVIcRZwJ9hlJ6WGvIcbDmtp5d4E="
+      },
+      {
+        "name": "openssl-3.6-libssl",
+        "url": "https://packages.wolfi.dev/os/aarch64/openssl-3.6-libssl-3.6.5-r6.apk",
+        "version": "3.6.5-r6",
+        "architecture": "aarch64",
+        "signature": {
+          "range": "",
+          "checksum": ""
+        },
+        "control": {
+          "range": "bytes=0-22679",
+          "checksum": "sha1-M21x0U0MlLH90YZM7CYpPC0RYzg="
+        },
+        "data": {
+          "range": "bytes=22680-503279",
+          "checksum": "sha256-i/nc6eaBl7KOCjlCGa3gTS2mR6k7UtPbvr+ZrM8JUng="
+        },
+        "checksum": "Q1M21x0U0MlLH90YZM7CYpPC0RYzg="
+      },
+      {
         "name": "temper-gofips",
         "url": "packages/aarch64/temper-gofips-0.1.0-r0.apk",
         "version": "0.1.0-r0",
         "architecture": "aarch64",
         "signature": {
-          "range": "bytes=0-648",
-          "checksum": "sha1-SycJQkIOe+orvdD5GK8J9l2QjbY="
+          "range": "bytes=0-644",
+          "checksum": "sha1-HrIf/8TmWAZPK2EYvIcM3y4njBU="
         },
         "control": {
-          "range": "bytes=649-2414",
-          "checksum": "sha1-xJu9jwg8yBdgrbAsSOh+w+NUwt8="
+          "range": "bytes=645-2410",
+          "checksum": "sha1-p9QZzcQlMwGWhceWcRdTGzcR+mQ="
         },
         "data": {
-          "range": "bytes=2415-2767413",
-          "checksum": "sha256-9d+5Xy9rEBj51Vps41Kwlln/4/6I+Z5aB7LZX0abakA="
+          "range": "bytes=2411-2767817",
+          "checksum": "sha256-NdH9neYOluP1FtU9PiCMl6kj0yv2pC5Yq2bh02tVOWc="
         },
-        "checksum": "Q1xJu9jwg8yBdgrbAsSOh+w+NUwt8="
+        "checksum": "Q1p9QZzcQlMwGWhceWcRdTGzcR+mQ="
       },
       {
         "name": "temper-node-fips",

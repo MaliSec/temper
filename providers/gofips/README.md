@@ -60,8 +60,14 @@ no libcrypto symbols of its own. The build links no libcrypto: the object
 has no libcrypto-namespaced undefined symbols (checked with
 `nm -D --undefined-only`) and carries only `DT_NEEDED libc.so.6`, so the
 same .so loads on OpenSSL 3.x and 4.x. One artifact passes the C
-acceptance suite on OpenSSL 3.0, 3.5 and 4.0 and runs inside the node
-image (OpenSSL 4.0.3).
+acceptance suite on OpenSSL 3.0, 3.5, 3.6 and 4.0 and runs inside the node
+image (OpenSSL 4.0.3), and OpenSSL 3.6 and 4.0 loaded in one process share
+it (audit E-44).
+
+Wolfi's OpenSSL 3.6 base provider also serves SHA-1 and MD5. The shipped
+config prefers gofips (`default_properties = ?provider=gofips`), and on an
+OpenSSL 3 core gofips registers MD5 as a refused row, so both names
+resolve to gofips: SHA-1 is served, MD5 is refused (audit page 06, E-45).
 
 ## arm64
 

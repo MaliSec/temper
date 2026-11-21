@@ -539,6 +539,18 @@ for cfg in images/*/apko.yaml images/*/apko.debug.yaml; do
 done
 [ -z "$ck_bad" ] && ok "lockfile config checksums match their configs" \
   || fail "lockfile config checksum is stale (run: make lock IMAGE=<name>):$ck_bad"
+# A config with include: is not covered above: its lockfile must still pin
+# every package its included config's lockfile pins, at the same version.
+inc_bad=""
+for cfg in images/*/apko.debug.yaml; do
+  inc=$(sed -n 's/^include: *//p' "$cfg"); [ -n "$inc" ] || continue
+  missing=$(jq -rn --slurpfile b "${inc%.yaml}.lock.json" --slurpfile d "${cfg%.yaml}.lock.json" '
+    ($d[0].contents.packages | map("\(.name)=\(.version)/\(.architecture)")) as $have
+    | [$b[0].contents.packages[] | "\(.name)=\(.version)/\(.architecture)" | select(. as $p | $have | index($p) | not)] | .[0] // empty')
+  [ -z "$missing" ] || inc_bad="$inc_bad $cfg($missing)"
+done
+[ -z "$inc_bad" ] && ok "lockfiles of configs with include: pin every package of the config they include" \
+  || fail "lockfile is stale against the config it includes (run: make lock IMAGE=<name>):$inc_bad"
 
 # A -fips image is its base image plus the gofips packages and the
 # environment that selects the provider (and, for node-fips, the guard):
@@ -560,6 +572,10 @@ for cfg in images/*-fips*/apko.yaml; do
   if [[ "$name" == node-fips* ]]; then
     grep -q '^  NODE_OPTIONS: --require=/usr/lib/node-fips/guard.js --tls-cipher-list=' "$cfg" && grep -q '^    - temper-node-fips@local$' "$cfg" \
       || fips_bad="$fips_bad $name:node-guard"
+    # OpenSSL 3 for native modules built against libssl.so.3: without it,
+    # Prisma falls back to engines with their own TLS, outside gofips.
+    grep -q '^    - openssl-3.6-libssl$' "$cfg" && grep -q '^    - openssl-3.6-libcrypto$' "$cfg" \
+      || fips_bad="$fips_bad $name:openssl-3"
   fi
   if [[ "$name" == python-fips* ]]; then
     pyl=$(./scripts/image-line.sh "$name")

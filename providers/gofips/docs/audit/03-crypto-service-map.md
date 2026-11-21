@@ -135,7 +135,7 @@ ECDHE suites with AES-GCM are served; CBC record mode is refused.
 | TLS 1.1 and older | Blocked at protocol layer | No TLS 1.0/1.1 PRF (MD5-SHA1) | E-42 |
 | TLS 1.2 CBC suites | Refused when the record layer is set up | TLS CBC record mode (MAC-then-encrypt) is not served | E-42 |
 | TLS 1.2 without the extended master secret | Refused at the master secret | RFC 7627 required | E-42 |
-| MD5 | Refused at fetch | Positive control proves the default would serve it | E-05, E-06 |
+| MD5 | Refused. OpenSSL 4: not registered, so a fetch fails. OpenSSL 3: a refused row is registered, so a fetch resolves to gofips and every use fails, as Wolfi's OpenSSL 3.6 base would otherwise serve MD5 (page 06) | Positive control proves the default would serve it | E-05, E-06, E-45 |
 | SHA-224, SHA-512/224, SHA-512/256 | Refused at fetch | Not registered | E-24 |
 | HMAC signature over more than 1 MiB, with a key under 112 bits or a SHA-1 digest | Refused | The signature buffers its input (EVP_DigestSignFinal duplicates the context); the key and digest rules are the HMAC MAC's | E-42 |
 | SHAKE with no output length | Refused at final | FIPS 202 has no default output length | E-39 |

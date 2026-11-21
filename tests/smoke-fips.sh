@@ -31,3 +31,22 @@ for cfg in images/node-fips*/apko.yaml images/python-fips*/apko.yaml; do
   esac
 done
 [ -z "$missing" ] || { echo "not loaded:$missing" >&2; exit 1; }
+
+# OpenSSL 3 and 4 in one process, each with gofips as its only crypto
+# provider (providers/gofips/testdata/dual_openssl.c): built in
+# base-glibc-dev, then run in each node-fips image against the image's own
+# libraries and config.
+docker image inspect "base-glibc-dev:local-$arch" >/dev/null 2>&1 \
+  || { echo "not loaded: base-glibc-dev:local-$arch (builds the dual OpenSSL check)" >&2; exit 1; }
+bin=$(mktemp -d); trap 'rm -rf "$dir" "$bin"' EXIT
+cp providers/gofips/testdata/dual_openssl.c "$bin/"; chmod 0777 "$bin"; chmod 0644 "$bin/dual_openssl.c"
+docker run --rm --platform "linux/$arch" -v "$bin:/b" --entrypoint /bin/sh "base-glibc-dev:local-$arch" \
+  -c 'cc -O2 -o /b/dual_openssl /b/dual_openssl.c -ldl -lpthread'
+for cfg in images/node-fips*/apko.yaml; do
+  name=$(basename "$(dirname "$cfg")")
+  out=$(docker run --rm --platform "linux/$arch" -v "$bin:/b:ro" --entrypoint /b/dual_openssl \
+    "$name:local-$arch" /etc/ssl/openssl-gofips.cnf 2>&1) || true
+  grep -q '^DUALOPENSSL: ALL PASS' <<<"$out" \
+    || { printf '%s\n' "$out" | tail -8 >&2; echo "$name: OpenSSL 3 and 4 do not both use only gofips" >&2; exit 1; }
+  echo "smoke ok: $name (OpenSSL 3 and 4 in one process, both on gofips only)"
+done

@@ -215,8 +215,17 @@ int main(void) {
     }
 
     /* --- negative: unsupported ops fail closed --- */
+    /* OpenSSL 3: gofips's refused MD5 row fetches and fails at init (it
+     * keeps Wolfi's OpenSSL 3.6 base MD5 from being chosen); OpenSSL 4:
+     * not registered. Either way no MD5 digest is computed. */
     EVP_MD *md5 = EVP_MD_fetch(NULL, "MD5", "provider=gofips");
-    CHECK(md5 == NULL, "negative: MD5 NOT fetchable (unregistered)");
+    unsigned char md5out[EVP_MAX_MD_SIZE];
+    size_t md5n = 0;
+    if (OPENSSL_VERSION_MAJOR == 3)
+        CHECK(md5 != NULL, "negative: OpenSSL 3: MD5 is gofips's refused row");
+    else
+        CHECK(md5 == NULL, "negative: MD5 NOT fetchable (unregistered)");
+    CHECK(!EVP_Q_digest(NULL, "MD5", "provider=gofips", "abc", 3, md5out, &md5n), "negative: no MD5 digest is computed");
     if (md5) EVP_MD_free(md5);
     EVP_CIPHER *chacha = EVP_CIPHER_fetch(NULL, "ChaCha20-Poly1305", "provider=gofips");
     CHECK(chacha == NULL, "negative: ChaCha20-Poly1305 NOT fetchable (unregistered)");

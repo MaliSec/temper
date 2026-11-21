@@ -15,6 +15,10 @@ GO_TGZ_SHA256=9849f4e04ee35303714e34fbc3ac8ab44ea3e448a95aa182f91e3b9b79c710ec  
 # label.
 GOLANG_IMAGE=docker.io/library/golang:1.26.11@sha256:4165ee6bf3b7811fd7b40373290405c83d0167dcb87ee5f29c427cdcef45ff8f
 UBUNTU_IMAGE=docker.io/library/ubuntu:24.04@sha256:73b999393d07f2bf65a40373778a44dc9a6d54ad7718d29247d8ff9413c4d6a8
+# OpenSSL 3.6.5 as the node images ship it, with OpenSSL 4.0.3 beside it
+# for the two-library test: WOLFI_IMAGE, WOLFI_PACKAGES, OSSL4_HEADERS.
+# shellcheck source=../dual-openssl.env
+. "$HERE/../dual-openssl.env"
 U=(-e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)")
 say() { echo "==> $*"; }
 
@@ -38,8 +42,9 @@ say "genuine OpenSSL FIPS provider"
 # Pulled here: a pull inside the captures would write into their output.
 docker pull -q "$GOLANG_IMAGE" >/dev/null
 docker pull -q "$UBUNTU_IMAGE" >/dev/null
+docker pull -q "$WOLFI_IMAGE" >/dev/null
 
-say "captures: host suites, arm64, parity, OpenSSL 3.0.13 / 3.5.7 / 4.0.3 matrix (parallel)"
+say "captures: host suites, arm64, parity, OpenSSL 3.0.13 / 3.5 / 3.6.5 / 4.0.3 matrix (parallel)"
 docker run --rm --network host "${U[@]}" -e SHARED="$W/shared" -v "$W/shared:$W/shared" \
   -v /var/run/docker.sock:/var/run/docker.sock -v "$REPO:/src:ro" -v "$W/compat:/compat:ro" \
   -v "$W/out:/out" -v "$HERE/host.sh:/run.sh:ro" gofips-capture:local bash /run.sh > "$W/host.log" 2>&1 &
@@ -55,13 +60,21 @@ docker run --rm "${M[@]}" gofips-capture:local bash /matrix.sh > "$W/matrix-4.0.
 pids+=("$!")
 docker run --rm "${M[@]}" "$GOLANG_IMAGE" bash -c \
   'apt-get update -qq >/dev/null && apt-get install -y -qq libssl-dev pkg-config openssl >/dev/null 2>&1; bash /matrix.sh' \
-  > "$W/matrix-3.5.7.txt" 2>&1 &
+  > "$W/matrix-3.5.txt" 2>&1 &
 pids+=("$!")
 docker run --rm "${M[@]}" -e GO_TGZ_SHA256="$GO_TGZ_SHA256" "$UBUNTU_IMAGE" bash -c '
   apt-get update -qq >/dev/null && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl ca-certificates gcc libc6-dev libssl-dev pkg-config openssl >/dev/null 2>&1
   curl -fsSL https://go.dev/dl/go1.26.11.linux-amd64.tar.gz -o /tmp/go.tgz
   echo "$GO_TGZ_SHA256  /tmp/go.tgz" | sha256sum -c - >/dev/null && tar -C /usr/local -xzf /tmp/go.tgz
   PATH=/usr/local/go/bin:$PATH bash /matrix.sh' > "$W/matrix-3.0.13.txt" 2>&1 &
+pids+=("$!")
+# The 4.0.3 headers build the gofips.so the images ship, for the dual test.
+docker run --rm "${M[@]}" -e WOLFI_PACKAGES="$WOLFI_PACKAGES" -e OSSL4_HEADERS="$OSSL4_HEADERS" "$WOLFI_IMAGE" sh -c '
+  apk add -q --no-cache $WOLFI_PACKAGES >/dev/null 2>&1 || { echo "apk add FAILED"; exit 1; }
+  apk add -q --no-cache --root /opt/ossl4 --initdb --no-scripts --keys-dir /etc/apk/keys \
+    --repositories-file /etc/apk/repositories $OSSL4_HEADERS >/dev/null 2>&1 \
+    || { echo "OpenSSL 4 headers FAILED"; exit 1; }
+  DUAL_OPENSSL_INCLUDE=/opt/ossl4/usr/include bash /matrix.sh' > "$W/matrix-3.6.5.txt" 2>&1 &
 pids+=("$!")
 # Every capture must succeed: a failed one leaves records assemble.py
 # could otherwise read as complete.

@@ -2,7 +2,7 @@
   "version": "v1",
   "config": {
     "name": "images/node-24/apko.yaml",
-    "checksum": "sha256-4yfIZNBGVUYNQPguWMYem4GI+TDOrgxTr6Mpw2ofrgc="
+    "checksum": "sha256-x44YeUd3hE1tX13ut4JZCDUiQ9fbC9bypR6s7ekA1X4="
   },
   "contents": {
     "keyring": [
@@ -408,6 +408,44 @@
         "checksum": "Q1iU6JcZjHyQtwiwUmZSWvVUhXmeY="
       },
       {
+        "name": "openssl-3.6-libcrypto",
+        "url": "https://packages.wolfi.dev/os/x86_64/openssl-3.6-libcrypto-3.6.5-r6.apk",
+        "version": "3.6.5-r6",
+        "architecture": "x86_64",
+        "signature": {
+          "range": "",
+          "checksum": ""
+        },
+        "control": {
+          "range": "bytes=0-22632",
+          "checksum": "sha1-ioZ+4eSEDmHV//QoL/GOlHfwAiQ="
+        },
+        "data": {
+          "range": "bytes=22633-2447307",
+          "checksum": "sha256-2cZygxLWpfazXqm66TSCS+WsdZSug73mKrLN8H87PS4="
+        },
+        "checksum": "Q1ioZ+4eSEDmHV//QoL/GOlHfwAiQ="
+      },
+      {
+        "name": "openssl-3.6-libssl",
+        "url": "https://packages.wolfi.dev/os/x86_64/openssl-3.6-libssl-3.6.5-r6.apk",
+        "version": "3.6.5-r6",
+        "architecture": "x86_64",
+        "signature": {
+          "range": "",
+          "checksum": ""
+        },
+        "control": {
+          "range": "bytes=0-22640",
+          "checksum": "sha1-wn+6m6IEFLD8t02ntk2UofPc7go="
+        },
+        "data": {
+          "range": "bytes=22641-541507",
+          "checksum": "sha256-r4lM/NJ4G6K3+SwpmiHhmRBnN+DGcAZhYeOru9bqyFM="
+        },
+        "checksum": "Q1wn+6m6IEFLD8t02ntk2UofPc7go="
+      },
+      {
         "name": "tzdata",
         "url": "https://packages.wolfi.dev/os/x86_64/tzdata-2026f-r1.apk",
         "version": "2026f-r1",
@@ -805,6 +843,44 @@
           "checksum": "sha256-nEjWYh1IuQmF6BJzktaU6SLMXVLTx/jVRYF0u8coqEc="
         },
         "checksum": "Q1NnlzIJLs06VDCFKT3tBNV1Rj/tA="
+      },
+      {
+        "name": "openssl-3.6-libcrypto",
+        "url": "https://packages.wolfi.dev/os/aarch64/openssl-3.6-libcrypto-3.6.5-r6.apk",
+        "version": "3.6.5-r6",
+        "architecture": "aarch64",
+        "signature": {
+          "range": "",
+          "checksum": ""
+        },
+        "control": {
+          "range": "bytes=0-22670",
+          "checksum": "sha1-JVIcRZwJ9hlJ6WGvIcbDmtp5d4E="
+        },
+        "data": {
+          "range": "bytes=22671-2193881",
+          "checksum": "sha256-iSmmeSF/K6aLFaFPoR+oAJ5zxJ5YlFj80hbrZJTKgII="
+        },
+        "checksum": "Q1JVIcRZwJ9hlJ6WGvIcbDmtp5d4E="
+      },
+      {
+        "name": "openssl-3.6-libssl",
+        "url": "https://packages.wolfi.dev/os/aarch64/openssl-3.6-libssl-3.6.5-r6.apk",
+        "version": "3.6.5-r6",
+        "architecture": "aarch64",
+        "signature": {
+          "range": "",
+          "checksum": ""
+        },
+        "control": {
+          "range": "bytes=0-22679",
+          "checksum": "sha1-M21x0U0MlLH90YZM7CYpPC0RYzg="
+        },
+        "data": {
+          "range": "bytes=22680-503279",
+          "checksum": "sha256-i/nc6eaBl7KOCjlCGa3gTS2mR6k7UtPbvr+ZrM8JUng="
+        },
+        "checksum": "Q1M21x0U0MlLH90YZM7CYpPC0RYzg="
       },
       {
         "name": "tzdata",

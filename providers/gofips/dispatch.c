@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
 #include <openssl/core_dispatch.h>
 #include <openssl/core_names.h>
 #include <openssl/params.h>
@@ -356,6 +357,92 @@ const OSSL_ALGORITHM gofips_digest_algorithms[] = {
      "SHAKE-256 (Go Cryptographic Module v1.0.0, CMVP #5247)"},
     {NULL, NULL, NULL, NULL},
 };
+
+/* MD5, refused, for OpenSSL 3 cores only. Wolfi's OpenSSL 3.6 base
+ * provider serves MD5 (and SHA-1) with properties "provider=base"; with
+ * base active, MD5 would resolve there, outside the module. This row is
+ * a complete digest, so the fetch succeeds and resolves to gofips under
+ * the shipped config's "?provider=gofips" preference, and every entry
+ * point fails: no context is created and nothing is computed. SHA-1
+ * needs no row: gofips serves it, and the preference selects it over
+ * base's. Under OpenSSL 4, whose base serves no digests, the row is not
+ * registered and an MD5 fetch fails as before. */
+extern int gofips_md5_refuse_get_params(OSSL_PARAM params[]);
+static void *md5_refuse_newctx(void *provctx) { (void)provctx; return NULL; }
+static void md5_refuse_freectx(void *dctx) { (void)dctx; }
+static void *md5_refuse_dupctx(void *dctx) { (void)dctx; return NULL; }
+static int md5_refuse_init(void *dctx, const OSSL_PARAM params[]) { (void)dctx; (void)params; return 0; }
+static int md5_refuse_update(void *dctx, const unsigned char *in, size_t inl) { (void)dctx; (void)in; (void)inl; return 0; }
+static int md5_refuse_final(void *dctx, unsigned char *out, size_t *outl, size_t outsz)
+{
+    (void)dctx; (void)out; (void)outsz;
+    if (outl != NULL)
+        *outl = 0;
+    return 0;
+}
+static int md5_refuse_digest(void *provctx, const unsigned char *in, size_t inl,
+                             unsigned char *out, size_t *outl, size_t outsz)
+{
+    (void)provctx; (void)in; (void)inl; (void)out; (void)outsz;
+    if (outl != NULL)
+        *outl = 0;
+    return 0;
+}
+static const OSSL_DISPATCH gofips_md5_refuse_dispatch[] = {
+    {OSSL_FUNC_DIGEST_NEWCTX, (OSSL_FUNC)md5_refuse_newctx},
+    {OSSL_FUNC_DIGEST_INIT, (OSSL_FUNC)md5_refuse_init},
+    {OSSL_FUNC_DIGEST_UPDATE, (OSSL_FUNC)md5_refuse_update},
+    {OSSL_FUNC_DIGEST_FINAL, (OSSL_FUNC)md5_refuse_final},
+    {OSSL_FUNC_DIGEST_DIGEST, (OSSL_FUNC)md5_refuse_digest},
+    {OSSL_FUNC_DIGEST_FREECTX, (OSSL_FUNC)md5_refuse_freectx},
+    {OSSL_FUNC_DIGEST_DUPCTX, (OSSL_FUNC)md5_refuse_dupctx},
+    {OSSL_FUNC_DIGEST_GET_PARAMS, (OSSL_FUNC)gofips_md5_refuse_get_params},
+    {0, NULL},
+};
+
+#define GOFIPS_N_DIGESTS (sizeof(gofips_digest_algorithms) / sizeof(gofips_digest_algorithms[0]) - 1)
+
+/* gofips_digest_algorithms plus the refused MD5 row, for OpenSSL 3 cores. */
+static OSSL_ALGORITHM gofips_digest_algorithms_ossl3[GOFIPS_N_DIGESTS + 2];
+static pthread_once_t gofips_digest_ossl3_once = PTHREAD_ONCE_INIT;
+static void gofips_digest_ossl3_build(void)
+{
+    memcpy(gofips_digest_algorithms_ossl3, gofips_digest_algorithms, GOFIPS_N_DIGESTS * sizeof(OSSL_ALGORITHM));
+    gofips_digest_algorithms_ossl3[GOFIPS_N_DIGESTS] = (OSSL_ALGORITHM){
+        "MD5:SSL3-MD5:1.2.840.113549.2.5", "provider=gofips,fips=no", gofips_md5_refuse_dispatch,
+        "MD5 (refused: not served by gofips; registered so no other provider serves it)"};
+    gofips_digest_algorithms_ossl3[GOFIPS_N_DIGESTS + 1] = (OSSL_ALGORITHM){NULL, NULL, NULL, NULL};
+}
+const OSSL_ALGORITHM *gofips_digest_table(int ossl3)
+{
+    if (!ossl3)
+        return gofips_digest_algorithms;
+    pthread_once(&gofips_digest_ossl3_once, gofips_digest_ossl3_build);
+    return gofips_digest_algorithms_ossl3;
+}
+
+/* gofips_core_is_ossl3 reports whether the core loading the provider is
+ * OpenSSL 3.x, from its OSSL_PROV_PARAM_CORE_VERSION. When the version
+ * cannot be read it reports 1: registering the refused MD5 row is the
+ * safe side. */
+int gofips_core_is_ossl3(const OSSL_CORE_HANDLE *handle, const OSSL_DISPATCH *in)
+{
+    OSSL_FUNC_core_get_params_fn *get_params = NULL;
+    for (; in != NULL && in->function_id != 0; in++) {
+        if (in->function_id == OSSL_FUNC_CORE_GET_PARAMS)
+            get_params = (OSSL_FUNC_core_get_params_fn *)in->function;
+    }
+    if (get_params == NULL)
+        return 1;
+    const char *version = NULL;
+    OSSL_PARAM params[] = {
+        {OSSL_PROV_PARAM_CORE_VERSION, OSSL_PARAM_UTF8_PTR, (void *)&version, sizeof(version), 0},
+        {NULL, 0, NULL, 0, 0},
+    };
+    if (!get_params(handle, params) || version == NULL)
+        return 1;
+    return version[0] == '3' && version[1] == '.';
+}
 
 /* SHA-384 digest op (same ids as SHA-256 digest op) */
 

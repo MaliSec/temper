@@ -4,7 +4,9 @@
  *   0. Control: the default provider offers MD5, so a later MD5 refusal
  *      means exclusion, not missing support.
  *   1. gofips only: SHA-256 via EVP gives known vectors.
- *   2. MD5 not fetchable from gofips; SHA-1 served but not fips=yes.
+ *   2. MD5 unusable from gofips (OpenSSL 3: gofips's refused MD5 row
+ *      fetches and fails at init; OpenSSL 4: not fetchable); SHA-1 served
+ *      but not fips=yes.
  *   3. temperfips_evidence() counter shows the digest ran in Go.
  *   4. DRBG checks and the FIPS build marker.
  *
@@ -15,6 +17,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <openssl/crypto.h>
 #include <openssl/evp.h>
 #include <openssl/provider.h>
 #include <openssl/err.h>
@@ -97,12 +100,23 @@ int main(void) {
     }
 
     /* --- Stage 2: negatives --- */
+    /* On an OpenSSL 3 core gofips registers a refused MD5, so that Wolfi's
+     * OpenSSL 3.6 base, which serves MD5, is not chosen; it fetches and
+     * every use fails. On OpenSSL 4 gofips registers no MD5. */
     EVP_MD *md5 = EVP_MD_fetch(NULL, "MD5", "provider=gofips");
-    CHECK(md5 == NULL, "negative: MD5 NOT fetchable from provider=gofips (unregistered)");
+    if (OPENSSL_VERSION_MAJOR == 3) {
+        CHECK(md5 != NULL, "negative: OpenSSL 3: MD5 from provider=gofips is the refused row");
+        EVP_MD_CTX *mc = EVP_MD_CTX_new();
+        CHECK(mc && md5 && !EVP_DigestInit_ex(mc, md5, NULL), "negative: OpenSSL 3: the refused MD5 fails at init");
+        EVP_MD_CTX_free(mc);
+    } else {
+        CHECK(md5 == NULL, "negative: MD5 NOT fetchable from provider=gofips (unregistered)");
+    }
     if (md5) EVP_MD_free(md5);
-    EVP_MD *md5b = EVP_MD_fetch(NULL, "MD5", "provider=gofips");
-    CHECK(md5b == NULL, "negative: MD5 NOT fetchable under provider=gofips property (exclusion, not missing support)");
-    if (md5b) EVP_MD_free(md5b);
+    unsigned char md5out[EVP_MAX_MD_SIZE];
+    size_t md5n = 0;
+    CHECK(!EVP_Q_digest(NULL, "MD5", "provider=gofips", "abc", 3, md5out, &md5n),
+          "negative: no MD5 digest is computed under provider=gofips (exclusion, not missing support)");
     /* SHA-1 is served but not approved: the Go Cryptographic Module has
      * no SHA-1, so it runs outside the validated module. It must be
      * fetchable by name, not fetchable as fips=yes, and correct. */

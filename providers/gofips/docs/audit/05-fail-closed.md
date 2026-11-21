@@ -13,7 +13,7 @@ GCM detail is on page 03.
 
 | # | Case | Observed | Evidence |
 |---|---|---|---|
-| N1 | MD5 fetch under `provider=gofips` | refused; default serves | E-01 |
+| N1 | MD5 under `provider=gofips` | no digest computed (OpenSSL 3: the refused row fails at init; OpenSSL 4: not fetchable); default serves | E-01, E-45 |
 | N2 | MD5 fetch, default absent | createHash('md5') throws | E-14 |
 | N3/N4 | ChaCha20 fetch / RSA key generation | refused | E-03 |
 | N5 | TLS 1.2 CBC-only or non-EMS peer; TLS 1.1 client | refused | E-42, E-13 |

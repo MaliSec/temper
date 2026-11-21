@@ -16,7 +16,10 @@ Exact versions are pinned in `apko.lock.json` and change with each relock.
 
 - `wolfi-baselayout`: minimal Wolfi filesystem layout. Not `wolfi-base`,
   which pulls in `apk-tools`; runtime images have no package manager.
-- `nodejs-26`: the runtime (depends on the dynamic linker only).
+- `nodejs-26`: the runtime, linked against OpenSSL 4 (`libssl.so.4`).
+- `openssl-3.6-libssl` + `openssl-3.6-libcrypto`: OpenSSL 3 (`libssl.so.3`),
+  for native modules built against it, such as Prisma's query and schema
+  engines.
 - `glibc` + `glibc-locale-posix`: glibc runtime. The posix locale provides
   `C.UTF-8` (`LANG=C.UTF-8` is set).
 - `libgcc` + `libstdc++`: runtime libraries for native addons (many npm

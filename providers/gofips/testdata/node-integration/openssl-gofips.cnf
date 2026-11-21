@@ -4,6 +4,8 @@
 # cryptographic algorithms. base is also active; it has only
 # encoders/decoders, needed to load PEM keys and certs. The default
 # provider is absent, so every crypto fetch resolves to gofips or fails.
+# Fetches prefer gofips (default_properties), so names Wolfi's OpenSSL 3.6
+# base also serves (SHA-1, MD5) resolve to gofips.
 #
 # Node needs SHA-256 and a RAND (CTR-DRBG) at boot. Without a RAND, its
 # CSPRNG bootstrap aborts with "Assertion failed: ncrypto::CSPRNG(nullptr, 0)".
@@ -17,6 +19,10 @@ openssl_conf = openssl_init
 
 [openssl_init]
 providers = provider_sect
+alg_section = algorithm_sect
+
+[algorithm_sect]
+default_properties = ?provider=gofips
 
 [provider_sect]
 gofips = gofips_sect

@@ -20,7 +20,10 @@ rests on, and the evidence for each condition, is in the gofips audit pack
 
 The configuration that makes this hold is set in the image:
 
-- `OPENSSL_CONF=/etc/ssl/openssl-gofips.cnf` loads gofips and `base` only.
+- `OPENSSL_CONF=/etc/ssl/openssl-gofips.cnf` loads gofips and `base` only,
+  in both OpenSSL libraries the image ships: OpenSSL 4, which Node uses,
+  and OpenSSL 3, for native modules built against `libssl.so.3` (such as
+  Prisma's engines). A process that loads both shares one gofips.
 - `GODEBUG=fips140=on` runs the Go module in approved mode.
 
 Changing either one, or loading another provider (including with

@@ -175,7 +175,8 @@ jobs:
       - name: Smoke -fips images (every line)
         run: |
           set -euo pipefail
-          for tar in dist/node-fips*.tar dist/python-fips*.tar; do docker load < "$tar"; done
+          # base-glibc-dev builds the dual OpenSSL check that runs in each node-fips image.
+          for tar in dist/node-fips*.tar dist/python-fips*.tar dist/base-glibc-dev.tar; do docker load < "$tar"; done
           tests/smoke-fips.sh ${{ matrix.docker_arch }}
 
       # The images above are loaded, so the suite's smoke cases run too.

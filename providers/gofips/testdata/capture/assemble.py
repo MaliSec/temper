@@ -118,13 +118,27 @@ MATRIX_ROWS = ["GOFIPS140 marker", "go test fips140=on", "go test fips140=only",
                "tls13_handshake fips140=on", "tls13_handshake fips140=only", "C acceptance",
                "differential T1-T13", "regtest", "guardtest", "audreg", "ecboundary", "paramshape13",
                "sha3_pbkdf2", "rsa_p384 fips140=on", "rsa_p384 fips140=only", "tls12 fips140=on",
-               "tls12 fips140=only", "s_client -groups P-256"]
+               "tls12 fips140=only", "s_client -groups P-256", "config preference"]
 MATRIX_OK = re.compile(r"ALL PASS|ALL CHECKS PASSED|^0 defects$|^TLS 1\.3 handshake completed|"
                        r"^[1-9][0-9]* pass, 0 fail$|^GOFIPS140=v1\.0\.0-c2097c7c$")
-for v in ("3.0.13", "3.5.7", "4.0.3"):
+# A label with two parts ("3.5") is a release series: Debian ships only its
+# newest patch release, which the header must name (openssl 3.5.N).
+MATRIX_VERSIONS = ("3.0.13", "3.5", "3.6.5", "4.0.3")
+
+
+def ran(v, t):
+    """The OpenSSL version a matrix file ran against, if it is the label's."""
+    m = re.match(r"openssl (\d+\.\d+\.\d+),", t)
+    if not m:
+        return None
+    got = m.group(1)
+    return got if (got == v or (v.count(".") == 1 and got.startswith(v + "."))) else None
+# OpenSSL 3 and 4 in one process (E-44) runs only where both are installed.
+DUAL_VERSION = "3.6.5"
+for v in MATRIX_VERSIONS:
     m = W / f"matrix-{v}.txt"
     t = m.read_text() if m.exists() else ""
-    if not t.startswith(f"openssl {v},"):
+    if not ran(v, t):
         bad.append(f"{m.name}: ran against {t.splitlines()[0] if t else 'nothing'}, not OpenSSL {v}")
     if re.search(r"FAIL|MISSING|failed [1-9]|compile FAILED|BUILD FAILED", t):
         bad.append(f"{m.name}: failures")
@@ -133,6 +147,9 @@ for v in ("3.0.13", "3.5.7", "4.0.3"):
         value = rows.get(label, "").strip()
         if not MATRIX_OK.search(value):
             bad.append(f"{m.name}: {label}: {value or 'no result'}")
+    dual = rows.get("dual OpenSSL 3+4", "").strip()
+    if (dual != "DUALOPENSSL: ALL PASS") if v == DUAL_VERSION else not dual.startswith("SKIP: "):
+        bad.append(f"{m.name}: dual OpenSSL 3+4: {dual or 'no result'}")
 if bad:
     sys.exit("capture failed, nothing written:\n  " + "\n  ".join(bad))
 
@@ -353,7 +370,8 @@ Captured {DATE}, go1.26.11, OpenSSL 4.0.3, release build.
 """ + "".join(f"   {l}\n" for l in bad))
 
 # ---- OpenSSL version matrix (E-38) ----
-mats = {v: (W / f"matrix-{v}.txt").read_text() for v in ("3.0.13", "3.5.7", "4.0.3")}
+mats = {ran(v, t) or v: t for v in MATRIX_VERSIONS for t in [(W / f"matrix-{v}.txt").read_text()]}
+DEB = next(v for v in mats if v.startswith("3.5."))
 
 
 def cell(text, key):
@@ -367,6 +385,9 @@ def cell(text, key):
     v = re.sub(r"ALL PASS \((\d+) skipped\)", "ALL PASS (1)", v)
     v = re.sub(r"ALL PASS \(\d+ checks\)", "ALL PASS", v)
     v = re.sub(r"ALL PASS \(\d+ checks, chains and TLS skipped\)", "ALL PASS (3)", v)
+    v = re.sub(r"^DUALOPENSSL: ALL PASS$", "ALL PASS", v)
+    v = re.sub(r"^CONFIGPREF: ALL PASS$", "ALL PASS", v)
+    v = re.sub(r"^SKIP: .*", "n/a (4)", v)
     return v
 
 
@@ -376,16 +397,18 @@ ROWS = [("go test fips140=on (E-37)", "go test fips140=on"), ("go test fips140=o
         ("regtest", "regtest"), ("guardtest (E-31)", "guardtest"), ("audreg", "audreg"),
         ("ecboundary (E-34)", "ecboundary"), ("paramshape13", "paramshape13"), ("sha3_pbkdf2 (E-39)", "sha3_pbkdf2"),
         ("rsa_p384 on (E-40)", "rsa_p384 fips140=on"), ("rsa_p384 only (E-40)", "rsa_p384 fips140=only"),
-        ("tls12 on (E-42)", "tls12 fips140=on"), ("tls12 only (E-42)", "tls12 fips140=only"), ("s_client -groups P-256 (2)", "s_client -groups P-256")]
+        ("tls12 on (E-42)", "tls12 fips140=on"), ("tls12 only (E-42)", "tls12 fips140=only"), ("s_client -groups P-256 (2)", "s_client -groups P-256"),
+        ("config preference (E-45)", "config preference"), ("dual OpenSSL 3+4 (E-44)", "dual OpenSSL 3+4")]
 table = "".join(f"  {label:<30}" + "".join(f"{cell(mats[v], key):<15}" for v in mats).rstrip() + "\n" for label, key in ROWS)
 first_use = {v: re.search(r"first-use: .*\((\d+/\d+) rounds failed\)", mats[v]).group(1) for v in mats}
 write(T / "openssl-versions-check.txt", f"""Provider by OpenSSL version (E-38)
 Captured {DATE} from this repository's tree.
-Toolchain: go1.26.11 (golang:1.26.11 and ubuntu:24.04 containers)
-OpenSSL: 3.0.13 (Ubuntu 24.04), 3.5.7 (Debian), 4.0.3 (built from the
-verified release tarball)
+Toolchain: go1.26.11 (golang:1.26.11, ubuntu:24.04 and wolfi-base containers)
+OpenSSL: 3.0.13 (Ubuntu 24.04), {DEB} (Debian's current 3.5), 3.6.5 (Wolfi, the
+libcrypto.so.3 the node images ship), 4.0.3 (built from the verified
+release tarball)
 
-Results                         3.0.13         3.5.7          4.0.3
+Results                         """ + "".join(f"{v:<15}" for v in mats).rstrip() + f"""
   GOFIPS140 marker              v1.0.0-c2097c7c (all)
 {table}
   (1) Two checks skipped by design below OpenSSL 3.5: rand-hook needs
@@ -396,7 +419,13 @@ Results                         3.0.13         3.5.7          4.0.3
       with gofips as the client and the group named "P-256".
   (3) Chain and TLS cases skipped: under fips140=only Go refuses SHA-1,
       so libcrypto has no certificate fingerprints, and OpenSSL 3.0.13
-      builds no certificate chain without them (3.5.7 and 4.0.3 do).
+      builds no certificate chain without them (3.5, 3.6.5 and 4.0.3 do).
+  (4) Needs libcrypto.so.3 and libcrypto.so.4 in one process, as in the
+      node images; only the Wolfi container has both. OpenSSL 3.6.5 and
+      4.0.3 each load the same gofips.so, built against the OpenSSL 4.0.3
+      headers, with the config the images ship: known answers, MD5
+      unusable, every digest served by gofips, PEM keys loaded, and 4
+      threads per library interleaved.
 
 audreg cases these results depend on:
   point-fmt   EC keys report point-format "uncompressed"; OpenSSL 3.x

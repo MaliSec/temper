@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # matrix.sh: the provider suites against whichever OpenSSL this container
 # provides; one summary line per suite (E-38). run.sh runs it on OpenSSL
-# 3.0.13 (Ubuntu 24.04), 3.5.7 (Debian) and 4.0.3 (gofips-capture:local).
+# 3.0.13 (Ubuntu 24.04), 3.5 (Debian's current), 3.6.5 (Wolfi) and 4.0.3
+# (gofips-capture:local). With DUAL_OPENSSL_INCLUDE (OpenSSL 4 headers; the
+# container has libcrypto.so.3 and libcrypto.so.4), it also runs
+# dual_openssl.c against a gofips.so built as the images ship it (E-44).
 # Mount: /src the repo (read-only).
 set -uo pipefail
 OPENSSL=openssl
@@ -11,7 +14,7 @@ OSSL="$(pkg-config --cflags openssl) $(pkg-config --libs openssl)"
 MFAIL=0
 res() {
   printf '  %-30s %s\n' "$1" "$2"
-  echo "$2" | grep -qE 'ALL PASS|ALL CHECKS PASSED|^0 defects$|^TLS 1\.3 handshake completed|^[1-9][0-9]* pass, 0 fail$|^GOFIPS140=v1\.0\.0-c2097c7c$' || MFAIL=1
+  echo "$2" | grep -qE 'ALL PASS|ALL CHECKS PASSED|^0 defects$|^TLS 1\.3 handshake completed|^[1-9][0-9]* pass, 0 fail$|^GOFIPS140=v1\.0\.0-c2097c7c$|^SKIP: ' || MFAIL=1
 }
 echo "openssl $(pkg-config --modversion openssl), $(go version | awk '{print $3}')"
 cp -r /src /work && cd /work/providers/gofips && mkdir -p /tmp/m
@@ -24,7 +27,7 @@ for mode in on only; do
 done
 T=/work/providers/gofips/testdata
 build() { cc -o "/tmp/$1" "$T/$1.c" $OSSL -lpthread 2>/tmp/cc.err || { echo "compile FAILED: $1"; cat /tmp/cc.err; }; }
-for b in tls13_handshake provider_acceptance differential_repro regtest guardtest audreg ecboundary paramshape13 sha3_pbkdf2 rsa_p384 tls12; do build $b; done
+for b in tls13_handshake provider_acceptance differential_repro regtest guardtest audreg ecboundary paramshape13 sha3_pbkdf2 rsa_p384 tls12 config_pref; do build $b; done
 cd /tmp/m
 for mode in on only; do res "tls13_handshake fips140=$mode" "$(GODEBUG=fips140=$mode /tmp/tls13_handshake /tmp/m 2>&1 | grep 'TLS13 HANDSHAKE' | tail -1)"; done
 res "C acceptance" "$(GOFIPS_SO=/tmp/m/gofips.so GODEBUG=fips140=on /tmp/provider_acceptance 2>&1 | grep -E 'ALL CHECKS|FAIL' | tail -1)"
@@ -61,4 +64,24 @@ else
   res "s_client -groups P-256" "FAILED: $(echo "$r" | grep -m1 -E 'error|alert|failed' | cut -c1-80)"
 fi
 wait
+# The config the images ship, against this OpenSSL (E-45).
+sed "s|/usr/lib/ossl-modules/gofips.so|/tmp/m/gofips.so|" /work/providers/gofips/openssl-gofips.cnf > /tmp/pref.cnf
+c=$(OPENSSL_CONF=/tmp/pref.cnf GODEBUG=fips140=on /tmp/config_pref 2>&1)
+res "config preference" "$(echo "$c" | grep -E '^CONFIGPREF:' | tail -1)"
+echo "$c" | grep '^FAIL' | sed 's/^/      /'
+# OpenSSL 3 and 4 in one process, sharing one gofips.so built against the
+# OpenSSL 4 headers and the config the images ship, as in the node images
+# (E-44).
+if [ -n "${DUAL_OPENSSL_INCLUDE:-}" ]; then
+  mkdir -p /tmp/m4
+  (cd /work/providers/gofips && CGO_ENABLED=1 GOFIPS140=v1.0.0 CGO_CFLAGS="-I$DUAL_OPENSSL_INCLUDE" \
+    go build -buildvcs=false -ldflags=-checklinkname=0 -buildmode=c-shared -o /tmp/m4/gofips.so .) \
+    && cc -o /tmp/dual_openssl "$T/dual_openssl.c" -ldl -lpthread \
+    && sed "s|/usr/lib/ossl-modules/gofips.so|/tmp/m4/gofips.so|" /work/providers/gofips/openssl-gofips.cnf > /tmp/g4.cnf \
+    && d=$(GODEBUG=fips140=on /tmp/dual_openssl /tmp/g4.cnf 2>&1) || true
+  res "dual OpenSSL 3+4" "$(echo "${d:-}" | grep -E '^DUALOPENSSL:' | tail -1 || true)"
+  echo "${d:-}" | grep '^FAIL' | sed 's/^/      /'
+else
+  res "dual OpenSSL 3+4" "SKIP: needs libcrypto.so.3 and libcrypto.so.4"
+fi
 exit $MFAIL
