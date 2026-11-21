@@ -15,7 +15,7 @@
 package:
   name: temper-python-3.13-fips
   version: 0.1.0
-  epoch: 0
+  epoch: 1
   description: "python-fips: hashlib and hmac only through the Go Cryptographic Module"
   copyright:
     - license: Apache-2.0
