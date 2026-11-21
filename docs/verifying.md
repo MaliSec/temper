@@ -184,6 +184,12 @@ grep -F "vex_sha256: \"$(sha256sum temper-<date tag>.vex.json | cut -d' ' -f1)\"
 grype ghcr.io/malisec/temper/<image>@sha256:<digest> --vex temper-<date tag>.vex.json
 ```
 
+A statement made after a release is not in that release's file. The
+current statements are in `vex/` on main, and
+[trust.malisec.dev](https://trust.malisec.dev) applies them to every
+release, naming the commit they come from. Grype takes those files too,
+with one `--vex` per file.
+
 Statements change what is reported, not what the release gate blocks: the
 gate runs on the scanners' own findings.
 

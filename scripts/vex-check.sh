@@ -11,8 +11,8 @@
 # version, or two statements for one product and package version.
 #
 # Reports, without failing, a statement whose package version no image of
-# that repository ships any more: after a relock it no longer applies, and
-# the finding shows as unreviewed until the statement is renewed.
+# that repository ships any more. Keep it: it still covers the releases
+# that shipped that version. The version a relock moves to needs its own.
 #
 # Usage: scripts/vex-check.sh [vex-dir] [images-dir]
 set -euo pipefail
@@ -82,7 +82,7 @@ for f in "${files[@]}"; do
       jq -e --arg n "$pkg" --arg v "$ver" 'any(.contents.packages[]; .name == $n and .version == $v)' \
         "$IMAGES_DIR/$d/apko.lock.json" >/dev/null && shipped=true
     done
-    $shipped || { echo "vex: stale: $vuln for $repo names $pkg $ver, which no $repo image ships"; stale=$((stale + 1)); }
+    $shipped || { echo "vex: stale: $vuln for $repo names $pkg $ver, which no $repo image ships now"; stale=$((stale + 1)); }
   done < <(jq -r '.statements[].products[]? | ."@id" as $p
     | if ((.subcomponents // []) | length) == 0 then [$p, ""] else (.subcomponents[] | [$p, (."@id" // "")]) end
     | @tsv' "$f")

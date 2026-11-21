@@ -95,8 +95,9 @@ image; it merges the relock once CI passes and releases.
 `vex/` holds an [OpenVEX](https://openvex.dev) file per vulnerability
 (`vex/CVE-2026-1234.json`) saying how it affects each image repository.
 Each statement names the package version it was checked against
-(`pkg:apk/wolfi/glibc-2.44@2.44-r24`), so it stops applying when a
-relock moves the package, and must then be checked again.
+(`pkg:apk/wolfi/glibc-2.44@2.44-r24`). When a relock moves the package,
+the new version needs its own statement, checked again; keep the old one,
+which still covers the releases that shipped that version.
 
 - `not_affected` needs a justification and an impact statement giving
   the evidence (for example, which binaries were checked and how).
@@ -109,8 +110,14 @@ relock moves the package, and must then be checked again.
   blocks: the gate runs on the scanners' raw findings.
 
 `scripts/vex-check.sh` checks the files (`make test` runs it, and so does
-each release, before publishing) and lists statements that no longer
-apply. Each release attaches the statements as `temper-<release>.vex.json`.
+each release, before publishing) and lists statements for package
+versions no image ships now.
+
+A change to `vex/` on main rebuilds the
+[trust center](https://trust.malisec.dev), which applies the statements
+to every release, including those cut before a statement was made. Each
+release also attaches the statements as of its cut, as
+`temper-<release>.vex.json`.
 
 ## What belongs here
 
