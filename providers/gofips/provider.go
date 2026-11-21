@@ -477,10 +477,12 @@ func gofips_query_operation(provctx *C.void, operationID C.int, noStore *C.int) 
 	return nil
 }
 
+// gofips_md5_refuse_get_params: the refused MD5 row's sizes, so a fetch
+// completes and resolves to gofips; every other entry point of the row
+// fails (dispatch.c).
+//
 //export gofips_md5_refuse_get_params
 func gofips_md5_refuse_get_params(params *C.OSSL_PARAM) C.int {
-	// The refused MD5 row's sizes, so a fetch completes and resolves to
-	// gofips; every other entry point of the row fails (dispatch.c).
 	return opGuard(func() C.int { return md5_refuse_get_paramsOp(params) })
 }
 
