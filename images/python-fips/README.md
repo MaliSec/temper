@@ -111,10 +111,10 @@ the parent makes it safe.
   exposed, most of all when threads use crypto while workers are forked.
   Loading the application in each worker reduces this but does not remove
   it: the master loads the provider as soon as it imports `hashlib` or
-  creates a TLS context. To avoid it, run one process per container and scale with
-  threads or replicas (for example gunicorn `--workers 1 --threads N`, or
-  Celery's `threads` pool), or use a server that starts each worker as a
-  new process.
+  creates a TLS context, and gunicorn forks its workers even with
+  `--workers 1`. To avoid it, run one process per container that does
+  not fork, and scale with threads or replicas: for example uvicorn
+  without `--workers`, or Celery's `threads` pool.
 - Node.js is not affected: `child_process` and `cluster` start new
   processes.
 
