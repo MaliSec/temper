@@ -43,6 +43,7 @@ For production, pin by digest and verify the image first
 | `git` | Runtime helper | Cloning repositories: git, the OpenSSH client and CA certificates |
 | `base-glibc-dev` | Build | Compilers and headers for build stages |
 | `go-builder` | Build | Go toolchain for build stages |
+| `rust-builder` | Build | Rust toolchain for build stages |
 | `node-builder` | Build | Node.js and npm for build stages |
 | `base-shell` | Debug | A shell for troubleshooting |
 

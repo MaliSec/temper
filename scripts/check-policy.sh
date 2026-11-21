@@ -47,7 +47,7 @@ is_debug() { case "$1" in *-debug) return 0 ;; *) return 1 ;; esac; }
 is_shell_tier() {
   local r="$1"
   [ -f "images/$1/repo" ] && r=$(tr -d '[:space:]' < "images/$1/repo")
-  case "$r" in base-shell|base-glibc-dev|go-builder|node-builder) return 0 ;; *) return 1 ;; esac
+  case "$r" in base-shell|base-glibc-dev|go-builder|node-builder|rust-builder) return 0 ;; *) return 1 ;; esac
 }
 
 # "mode name" per tar -tv line. A symlink line ends "name -> target": the
