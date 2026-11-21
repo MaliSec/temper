@@ -23,6 +23,22 @@ esac
 REGISTRY_REPO="ghcr.io/malisec/temper"
 fails=0 warns=0 runs=0
 
+# Test certificates for the TLS checks, made for this run and never kept: a
+# CA, and a server certificate from it for wrong.example (ECDSA P-256, which
+# the FIPS images accept). Mounted at /fixtures; each check gets the path.
+fx=$(mktemp -d)
+trap 'rm -rf "$fx"' EXIT
+openssl req -x509 -new -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 1 \
+  -subj "/CN=Temper VEX check CA" -keyout "$fx/ca.key" -out "$fx/ca.pem" \
+  -addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,keyCertSign,cRLSign" 2>/dev/null
+openssl req -new -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+  -subj "/CN=wrong.example" -keyout "$fx/wrong-name.key" -out "$fx/wrong-name.csr" 2>/dev/null
+openssl x509 -req -in "$fx/wrong-name.csr" -CA "$fx/ca.pem" -CAkey "$fx/ca.key" -days 1 -out "$fx/wrong-name.pem" \
+  -extfile <(printf '%s\n' "basicConstraints=critical,CA:FALSE" "keyUsage=critical,digitalSignature" \
+    "extendedKeyUsage=serverAuth" "subjectAltName=DNS:wrong.example" \
+    "subjectKeyIdentifier=hash" "authorityKeyIdentifier=keyid") 2>/dev/null
+chmod 755 "$fx"; chmod 644 "$fx"/*  # the images run as a non-root user
+
 shopt -s nullglob
 for ev in vex/evidence/*.json; do
   cve=$(jq -r .vulnerability "$ev")
@@ -45,8 +61,8 @@ for ev in vex/evidence/*.json; do
       docker image inspect "$image" >/dev/null 2>&1 \
         || { echo "FAIL $cve: $image ships $pkg $ver and is not loaded"; fails=$((fails + 1)); continue; }
       set +e
-      out=$(docker run --rm --network none --platform "linux/$arch" -v "$PWD/tests/vex:/v:ro" --entrypoint /usr/bin/python3 \
-        "$image" -I "/v/$(basename "$check")" 2>&1)
+      out=$(docker run --rm --network none --platform "linux/$arch" -v "$PWD/tests/vex:/v:ro" -v "$fx:/fixtures:ro" \
+        --entrypoint /usr/bin/python3 "$image" -I "/v/$(basename "$check")" /fixtures 2>&1)
       rc=$?
       set -e
       runs=$((runs + 1))

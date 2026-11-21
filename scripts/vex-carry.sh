@@ -85,17 +85,17 @@ for ev in vex/evidence/*.json; do
   changed=false
   while IFS=$'\t' read -r pkg status fixes; do
     read -ra fix <<<"$fixes"
-    idx=$(jq --arg p "pkg:apk/wolfi/$pkg@" --arg st "$status" \
-      '[.statements | to_entries[] | select(.value.status == $st
-        and any(.value.products[].subcomponents[]; ."@id" | startswith($p))) | .key][0] // empty' "$doc")
-    [ -n "$idx" ] || { review+=("$cve $pkg: no $status statement for this package"); continue; }
-    # Each (repository, version) the lockfiles ship that the statement does not cover.
+    # Each (repository, version) the lockfiles ship that no statement covers.
     while IFS=$'\t' read -r repo ver; do
       sub="pkg:apk/wolfi/$pkg@$ver"
-      jq -e --argjson i "$idx" --arg p "pkg:oci/$repo?repository_url=$REGISTRY_REPO/$repo" --arg s "$sub" \
-        'any(.statements[$i].products[]; ."@id" == $p and any(.subcomponents[]; ."@id" == $s))' "$doc" >/dev/null && continue
-      jq -e --argjson i "$idx" --arg p "pkg:oci/$repo?repository_url=$REGISTRY_REPO/$repo" \
-        'any(.statements[$i].products[]; ."@id" == $p)' "$doc" >/dev/null || continue
+      product="pkg:oci/$repo?repository_url=$REGISTRY_REPO/$repo"
+      jq -e --arg p "$product" --arg s "$sub" \
+        'any(.statements[].products[]; ."@id" == $p and any(.subcomponents[]; ."@id" == $s))' "$doc" >/dev/null && continue
+      # The statement with this status that names this repository and package.
+      idx=$(jq --arg p "$product" --arg pk "pkg:apk/wolfi/$pkg@" --arg st "$status" \
+        '[.statements | to_entries[] | select(.value.status == $st and any(.value.products[];
+          ."@id" == $p and any(.subcomponents[]; ."@id" | startswith($pk)))) | .key][0] // empty' "$doc")
+      [ -n "$idx" ] || { review+=("$cve $repo: $pkg $ver not carried: no $status statement names $repo and $pkg"); continue; }
       r=$(recipe "$pkg" "$ver")
       if [[ "$r" == error:* ]]; then review+=("$cve $pkg $ver: ${r#error: }"); continue; fi
       read -r wolfi src picks <<<"$r"
@@ -118,7 +118,7 @@ for ev in vex/evidence/*.json; do
         not_affected) ok=true ;;
       esac
       if $ok; then
-        jq --argjson i "$idx" --arg p "pkg:oci/$repo?repository_url=$REGISTRY_REPO/$repo" --arg s "$sub" \
+        jq --argjson i "$idx" --arg p "$product" --arg s "$sub" \
           '(.statements[$i].products[] | select(."@id" == $p) | .subcomponents) += [{"@id": $s}]' "$doc" > "$work/doc.json"
         mv "$work/doc.json" "$doc"
         changed=true
@@ -131,7 +131,7 @@ for ev in vex/evidence/*.json; do
         jq -r --arg n "$pkg" --arg r "$repo" '.contents.packages[] | select(.name == $n) | [$r, .version] | @tsv' "images/$d/apko.lock.json"
       done
     done | sort -u)
-  done < <(jq -r '.lines | to_entries[] | [.key, .value.status, (.value.fix | join(" "))] | @tsv' "$ev")
+  done < <(jq -r '.lines | to_entries[] | [.key, .value.status, ((.value.fix // []) | join(" "))] | @tsv' "$ev")
   if $changed; then
     jq --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '.version += 1 | .timestamp = $ts' "$doc" > "$work/doc.json"
     mv "$work/doc.json" "$doc"

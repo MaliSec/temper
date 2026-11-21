@@ -111,7 +111,8 @@ for e in "${evidence[@]}"; do
       (.lines // {} | to_entries[] | .key as $pkg | .value as $l |
         (if ($l.status | IN("fixed", "affected", "not_affected")) | not then "\($pkg): unknown status \($l.status)" else empty end),
         (if $l.status == "fixed" and (($l.fix // []) | length) == 0 then "\($pkg): fixed without fix commits" else empty end),
-        (if any(($l.fix // [])[]; sha | not) then "\($pkg): fix commits must be full SHAs" else empty end),
+        (if ($l.fix // [] | type) != "array" then "\($pkg): fix must be a list" else empty end),
+        (if ($l.fix // [] | type) == "array" and any(($l.fix // [])[]; sha | not) then "\($pkg): fix commits must be full SHAs" else empty end),
         ([$doc[0].statements[] | select(any(.products[].subcomponents[]?; ."@id" | startswith("pkg:apk/wolfi/\($pkg)@")))] as $ss |
           (if ($ss | length) == 0 then "\($pkg): no statement names this package" else empty end),
           ($ss[] | select(.status != $l.status) | "\($pkg): a statement says \(.status), the evidence \($l.status)")))
