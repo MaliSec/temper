@@ -2,7 +2,7 @@
   "version": "v1",
   "config": {
     "name": "images/rust-builder/apko.yaml",
-    "checksum": "sha256-f1CKMSUMAAg6ahJjWIHoyXaE1k4plgThCeN0IL1r1Ws="
+    "checksum": "sha256-bYIPTwwQjlaAe5ezeTVFrZYl+8C+0+RZG/k0OkLCFRo="
   },
   "contents": {
     "keyring": [

@@ -24,9 +24,11 @@ rust-1.100 declares no C toolchain, so `build-base` is listed explicitly.
 ## Properties
 
 - Build only, never a production runtime. The runtime stage copies only the
-  built binary or module out of this one: a static binary into `static`, a
-  binary that needs glibc into `base-glibc`, a native module into `node` or
-  `python`.
+  built binary or module out of this one, into a runtime image that has
+  every library it links (`readelf -d` lists them): a static binary into
+  `static`, one that needs only glibc into `base-glibc`, a native module into
+  `node` or `python`, which also have `libstdc++`.
+- No clang, so crates that run `bindgen` at build time do not build here.
 - Runs as nonroot UID 65532 (`HOME=/home/nonroot`,
   `CARGO_HOME=/home/nonroot/.cargo`, whose `bin` is on `PATH`).
 - No `rustup`: the toolchain is the image's, and `rust-toolchain.toml` files

@@ -2,8 +2,8 @@
 # See README.md.
 #
 # rust-1.100 declares no C toolchain, which rustc needs as its linker and
-# crates with C code (cc, bindgen) need as their compiler, so build-base is
-# listed explicitly.
+# crates with C code (the cc crate) need as their compiler, so build-base is
+# listed explicitly. There is no clang, so bindgen does not run here.
 #
 # Build (from the repository root):
 #   apko lock images/rust-builder/apko.yaml --arch x86_64,aarch64 \
