@@ -113,6 +113,26 @@ which still covers the releases that shipped that version.
 each release, before publishing) and lists statements for package
 versions no image ships now.
 
+A statement can carry itself to new package versions. Give it evidence,
+`vex/evidence/<CVE>.json`: the upstream issue and fix commits, the status
+of each package line (with the commits that fix it, for `fixed`), and a
+check, `tests/vex/<CVE>.py`, that runs in the image and exits 0 when it is
+fixed and 1 when it is vulnerable. Then:
+
+- the nightly relock (`scripts/vex-carry.sh`) extends the statement to a
+  new version when Wolfi's recipe for that version shows the same status:
+  for `fixed`, it builds a commit containing a fix commit or cherry-picks
+  one; for `affected`, nothing in its history mentions the issue;
+- CI (`tests/vex-checks.sh`) runs the check in every image that ships the
+  package, on both architectures: a `fixed` or `not_affected` statement
+  whose check shows the image vulnerable fails the build, and an
+  `affected` one whose check shows it fixed warns.
+
+A version the relock cannot carry is listed in its pull request; its
+findings show as unreviewed until the statement is updated. Write the
+check against the attack, not the code: it must show the image vulnerable
+before the fix.
+
 A change to `vex/` on main rebuilds the
 [trust center](https://trust.malisec.dev), which applies the statements
 to every release, including those cut before a statement was made. Each

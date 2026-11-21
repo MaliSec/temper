@@ -498,6 +498,32 @@ jq -n --argjson p "$p" --argjson q "$q" '{"@context": "https://openvex.dev/ns/v0
   && ok "one product may have statements for two package versions (during a relock)" \
   || fail "vex-check rejects statements for two versions of a package on one product"
 expect_fail "vex-check refuses a missing vex directory" ./scripts/vex-check.sh "$TMP/no-such-vex" images
+rm -f "$vx"/*.json; mkdir -p "$vx/evidence"
+vexdoc CVE-1.json "{\"vulnerability\": {\"name\": \"CVE-1\"}, \"products\": [$p], \"status\": \"affected\", \"action_statement\": \"x\"}"
+evid() { # evid <label> <evidence json>
+  echo "$2" > "$vx/evidence/CVE-1.json"
+  expect_fail "vex-check refuses evidence with $1" ./scripts/vex-check.sh "$vx" images
+}
+sha=0123456789abcdef0123456789abcdef01234567
+evid "another status than its statement" "{\"vulnerability\": \"CVE-1\", \"issue\": \"gh-1\", \"upstream\": [\"$sha\"], \"check\": \"tests/vex/CVE-2026-16052.py\", \"lines\": {\"glibc-2.44\": {\"status\": \"fixed\", \"fix\": [\"$sha\"]}}}"
+evid "a fixed line without fix commits" "{\"vulnerability\": \"CVE-1\", \"issue\": \"gh-1\", \"upstream\": [\"$sha\"], \"check\": \"tests/vex/CVE-2026-16052.py\", \"lines\": {\"glibc-2.44\": {\"status\": \"fixed\", \"fix\": []}}}"
+evid "a short commit" "{\"vulnerability\": \"CVE-1\", \"issue\": \"gh-1\", \"upstream\": [\"0123456\"], \"check\": \"tests/vex/CVE-2026-16052.py\", \"lines\": {\"glibc-2.44\": {\"status\": \"affected\", \"fix\": []}}}"
+evid "a missing check" "{\"vulnerability\": \"CVE-1\", \"issue\": \"gh-1\", \"upstream\": [\"$sha\"], \"check\": \"tests/vex/none.py\", \"lines\": {\"glibc-2.44\": {\"status\": \"affected\", \"fix\": []}}}"
+evid "a package no statement names" "{\"vulnerability\": \"CVE-1\", \"issue\": \"gh-1\", \"upstream\": [\"$sha\"], \"check\": \"tests/vex/CVE-2026-16052.py\", \"lines\": {\"zlib\": {\"status\": \"affected\", \"fix\": []}}}"
+echo "{\"vulnerability\": \"CVE-1\", \"issue\": \"gh-1\", \"upstream\": [\"$sha\"], \"check\": \"tests/vex/CVE-2026-16052.py\", \"lines\": {\"glibc-2.44\": {\"status\": \"affected\", \"fix\": []}}}" > "$vx/evidence/CVE-1.json"
+./scripts/vex-check.sh "$vx" images >/dev/null 2>&1 && ok "vex-check accepts evidence that matches its statements" \
+  || fail "vex-check refuses evidence that matches its statements"
+rm -f "$vx/evidence/CVE-1.json"
+grep -q 'scripts/vex-carry.sh' .github/workflows/temper-nightly.yml && grep -q 'git add images/ vex/' .github/workflows/temper-nightly.yml \
+  && grep -q 'tests/vex-checks.sh' .github/workflows/temper-build.yml \
+  && ok "the nightly relock carries VEX statements, and CI runs their checks" \
+  || fail "the VEX carry or its checks are not wired into the nightly relock and CI"
+bad=""
+for ev in vex/evidence/*.json; do
+  c=$(jq -r .check "$ev")
+  python3 -I -c 'import ast,sys; ast.parse(open(sys.argv[1]).read())' "$c" 2>/dev/null || bad="$bad $c"
+done
+[ -z "$bad" ] && ok "every VEX check is valid Python" || fail "VEX checks that are not valid Python:$bad"
 
 echo "== rollback-latest.sh: fail-closed interfaces =="
 expect_fail "rollback without a tag fails" ./scripts/rollback-latest.sh
