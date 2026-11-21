@@ -595,22 +595,22 @@
       },
       {
         "name": "temper-python-3.13-fips",
-        "url": "packages/x86_64/temper-python-3.13-fips-0.1.0-r0.apk",
-        "version": "0.1.0-r0",
+        "url": "packages/x86_64/temper-python-3.13-fips-0.1.0-r1.apk",
+        "version": "0.1.0-r1",
         "architecture": "x86_64",
         "signature": {
           "range": "bytes=0-646",
-          "checksum": "sha1-JD9MU6eybSPJWE0+jWK0611/pYA="
+          "checksum": "sha1-RINq0KEHL5WJiWHdP1yeOd0cP4g="
         },
         "control": {
-          "range": "bytes=647-1746",
-          "checksum": "sha1-Km6Lw6/gz7QPQ+HFZOT+X5nFTy8="
+          "range": "bytes=647-1745",
+          "checksum": "sha1-/7OKeLv12cJfW/7TgOj5lF9b7lA="
         },
         "data": {
-          "range": "bytes=1747-6102",
-          "checksum": "sha256-F1eqZjiY0MC0mglEGGS/GKI4121kWZpiT2XxYz8Tbjc="
+          "range": "bytes=1746-6351",
+          "checksum": "sha256-+alvzCtPGwE7GwgZDJ+N4sdAirSZARqbLKajmucFC4Q="
         },
-        "checksum": "Q1Km6Lw6/gz7QPQ+HFZOT+X5nFTy8="
+        "checksum": "Q1/7OKeLv12cJfW/7TgOj5lF9b7lA="
       },
       {
         "name": "tzdata",
@@ -1184,22 +1184,22 @@
       },
       {
         "name": "temper-python-3.13-fips",
-        "url": "packages/aarch64/temper-python-3.13-fips-0.1.0-r0.apk",
-        "version": "0.1.0-r0",
+        "url": "packages/aarch64/temper-python-3.13-fips-0.1.0-r1.apk",
+        "version": "0.1.0-r1",
         "architecture": "aarch64",
         "signature": {
-          "range": "bytes=0-645",
-          "checksum": "sha1-mNXerrVFa8IEI6/ioQXApHj0R10="
+          "range": "bytes=0-644",
+          "checksum": "sha1-/DjCiqdJ9VmHsxcLcP8mkCFwCh8="
         },
         "control": {
-          "range": "bytes=646-1745",
-          "checksum": "sha1-PcTPrDvj7WSoJspJxKn8RBbQBjw="
+          "range": "bytes=645-1745",
+          "checksum": "sha1-E1uM+gKC2YiUf37fCf4OCWvs7eo="
         },
         "data": {
-          "range": "bytes=1746-6099",
-          "checksum": "sha256-1a3W870lJEkQTL2Ug5ZnqPpM+sho0d47M3BRTOx9MPk="
+          "range": "bytes=1746-6351",
+          "checksum": "sha256-+EZnO3jdb2XdzLR6s6EhRhXYbKIs5WiVKuN2ROOqGHk="
         },
-        "checksum": "Q1PcTPrDvj7WSoJspJxKn8RBbQBjw="
+        "checksum": "Q1E1uM+gKC2YiUf37fCf4OCWvs7eo="
       },
       {
         "name": "tzdata",

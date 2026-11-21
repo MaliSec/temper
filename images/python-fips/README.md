@@ -107,10 +107,14 @@ the parent makes it safe.
 - `multiprocessing` defaults to `forkserver` on both lines (Python 3.14
   does; on 3.13 the image sets it). `set_start_method("fork")` brings the
   risk back.
-- Servers that fork workers after loading the application (gunicorn
-  `--preload`, Celery's prefork pool, uWSGI) are exposed, most of all when
-  threads use crypto while workers are forked. Load the application in
-  each worker instead.
+- Servers that fork workers (gunicorn, Celery's prefork pool, uWSGI) are
+  exposed, most of all when threads use crypto while workers are forked.
+  Loading the application in each worker reduces this but does not remove
+  it: the master loads the provider as soon as it imports `hashlib` or
+  creates a TLS context. To avoid it, run one process per container and scale with
+  threads or replicas (for example gunicorn `--workers 1 --threads N`, or
+  Celery's `threads` pool), or use a server that starts each worker as a
+  new process.
 - Node.js is not affected: `child_process` and `cluster` start new
   processes.
 
