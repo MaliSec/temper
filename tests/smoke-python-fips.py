@@ -221,8 +221,8 @@ assert r.returncode == 0 and "unsupported" in r.stdout, "child started without O
 # multiprocessing defaults to forkserver on every line (Python 3.14 does;
 # 3.13 through packages/python-fips-3.13/sitecustomize.py): a fork()ed child
 # can hang in the provider's Go runtime.
-r = subprocess.run([sys.executable, "-c", "import multiprocessing as m; print(m.get_start_method())"],
+r = subprocess.run([sys.executable, "-c", "import multiprocessing as m; print(m.get_start_method(), m.get_all_start_methods()[0])"],
                    capture_output=True, text=True)
-assert r.stdout.strip() == "forkserver", "multiprocessing start method: " + r.stdout + r.stderr
+assert r.stdout.split() == ["forkserver", "forkserver"], "multiprocessing start method: " + r.stdout + r.stderr
 
 print(f"smoke ok: python-fips {sys.version.split()[0]} (gofips serves hashlib/hmac/ssl; local TLS 1.3 server with tickets and resumption, local TLS 1.2 (GCM; CBC refused); {tls}; md5, sha224, blake2, short-salt pbkdf2, P-521, RSA private keys refused; no TLS 1.1 in the base; no legacy; multiprocessing forkserver)")

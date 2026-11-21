@@ -98,18 +98,19 @@ A connection fails when the server:
 
 ## fork()
 
-The provider runs in a Go runtime inside the process, which does not
-survive `fork()` without `exec`: a child that uses crypto can hang if
-another thread was inside the provider at the moment of the fork. A child
-forked while no other thread uses crypto is not affected.
+The provider runs in a Go runtime inside the process, and Go does not
+support `fork()` without `exec`: a forked child that uses crypto can hang
+on a lock the runtime held at the fork. It is most likely while other
+threads use crypto (about one child in four in testing), and no state of
+the parent makes it safe.
 
 - `multiprocessing` defaults to `forkserver` on both lines (Python 3.14
   does; on 3.13 the image sets it). `set_start_method("fork")` brings the
   risk back.
 - Servers that fork workers after loading the application (gunicorn
-  `--preload`, Celery's prefork pool, uWSGI) are affected if threads use
-  crypto while workers are forked. Load the application in each worker
-  instead, or start no threads before forking.
+  `--preload`, Celery's prefork pool, uWSGI) are exposed, most of all when
+  threads use crypto while workers are forked. Load the application in
+  each worker instead.
 - Node.js is not affected: `child_process` and `cluster` start new
   processes.
 
