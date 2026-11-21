@@ -110,6 +110,19 @@ jobs:
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
+      # Extends the VEX statements that have evidence to the new package
+      # versions, where each version's source shows the same status; the
+      # PR's CI runs their behavioural checks in the built images.
+      - name: Carry VEX statements
+        if: steps.diff.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ./scripts/vex-carry.sh > /tmp/vex-carry.md
+          cat /tmp/vex-carry.md
+          ./scripts/vex-check.sh vex images
+
       # A push with the App's token runs temper-build on the PR.
       - name: Open or update the relock PR
         if: steps.diff.outputs.changed == 'true'
@@ -123,7 +136,7 @@ jobs:
           git config user.name "$bot"
           git config user.email "$botmail"
           git checkout -B "$BRANCH"
-          git add images/
+          git add images/ vex/
           git commit -q -m "Relock images against Wolfi ($(date -u +%Y-%m-%d))" \
             -m "Signed-off-by: $bot <$botmail>"
           git push -q --force origin "$BRANCH"
@@ -132,6 +145,8 @@ jobs:
             echo "Nightly relock: package versions Wolfi now resolves for the committed configs."
             echo
             cat /tmp/lock-diff.md
+            echo
+            cat /tmp/vex-carry.md
           } > /tmp/pr-body.md
 
           if gh pr view "$BRANCH" --json state -q .state 2>/dev/null | grep -qx OPEN; then

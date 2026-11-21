@@ -10,6 +10,11 @@
 # product that is not a Temper image repository or names no package
 # version, or two statements for one product and package version.
 #
+# Also fails on evidence (vex/evidence/<CVE>.json, read by vex-carry.sh and
+# tests/vex-checks.sh) that does not match its statements: a line whose
+# status differs from the statements for that package, a fixed line without
+# fix commits, a commit that is not a full SHA, or a missing check script.
+#
 # Reports, without failing, a statement whose package version no image of
 # that repository ships any more. Keep it: it still covers the releases
 # that shipped that version. The version a relock moves to needs its own.
@@ -88,5 +93,31 @@ for f in "${files[@]}"; do
     | @tsv' "$f")
 done
 
-echo "vex: ${#files[@]} file(s), $fails problem(s), $stale stale statement(s)"
+shopt -s nullglob
+evidence=("$VEX_DIR"/evidence/*.json)
+shopt -u nullglob
+for e in "${evidence[@]}"; do
+  vuln=$(basename "$e" .json)
+  jq -e . "$e" >/dev/null 2>&1 || { fail "$e: not valid JSON"; continue; }
+  [ -f "$VEX_DIR/$vuln.json" ] || { fail "$e: no statements in $VEX_DIR/$vuln.json"; continue; }
+  check=$(jq -r '.check // ""' "$e")
+  [ -n "$check" ] && [ -f "$check" ] || fail "$e: check ${check:-(none)} does not exist"
+  problems=$(jq -r --arg v "$vuln" --slurpfile doc "$VEX_DIR/$vuln.json" '
+    def sha: type == "string" and test("^[0-9a-f]{40}$");
+    [ (if .vulnerability != $v then "names \(.vulnerability), not \($v)" else empty end),
+      (if (.issue // "" | test("^gh-[0-9]+$")) | not then "issue is not gh-<number>" else empty end),
+      (if ((.upstream // []) | length) == 0 or any(.upstream[]; sha | not) then "upstream must list full commit SHAs" else empty end),
+      (if ((.lines // {}) | length) == 0 then "no lines" else empty end),
+      (.lines // {} | to_entries[] | .key as $pkg | .value as $l |
+        (if ($l.status | IN("fixed", "affected", "not_affected")) | not then "\($pkg): unknown status \($l.status)" else empty end),
+        (if $l.status == "fixed" and (($l.fix // []) | length) == 0 then "\($pkg): fixed without fix commits" else empty end),
+        (if any(($l.fix // [])[]; sha | not) then "\($pkg): fix commits must be full SHAs" else empty end),
+        ([$doc[0].statements[] | select(any(.products[].subcomponents[]?; ."@id" | startswith("pkg:apk/wolfi/\($pkg)@")))] as $ss |
+          (if ($ss | length) == 0 then "\($pkg): no statement names this package" else empty end),
+          ($ss[] | select(.status != $l.status) | "\($pkg): a statement says \(.status), the evidence \($l.status)")))
+    ] | .[]' "$e")
+  while IFS= read -r p; do [ -z "$p" ] || fail "$e: $p"; done <<<"$problems"
+done
+
+echo "vex: ${#files[@]} file(s), ${#evidence[@]} with evidence, $fails problem(s), $stale stale statement(s)"
 [ "$fails" = 0 ]

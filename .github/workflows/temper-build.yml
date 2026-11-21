@@ -179,6 +179,11 @@ jobs:
           for tar in dist/node-fips*.tar dist/python-fips*.tar dist/base-glibc-dev.tar; do docker load < "$tar"; done
           tests/smoke-fips.sh ${{ matrix.docker_arch }}
 
+      # Each VEX statement with evidence, checked in the images that ship its
+      # package (the python images, loaded above).
+      - name: VEX checks
+        run: tests/vex-checks.sh ${{ matrix.docker_arch }}
+
       # The images above are loaded, so the suite's smoke cases run too.
       - name: Repository tests
         run: |
