@@ -198,6 +198,40 @@ grep -q -- '--cert-identity-regex "$CERT_IDENTITY_REGEXP"' scripts/verify-build.
   && ok "verify-build pins the attestation signer to a release tag (not the workflow at any ref)" \
   || fail "verify-build does not pin the attestation signer identity"
 
+# The workflow is public and reusable: called from another repository, it
+# would sign with Temper's identity. Every job refuses to run elsewhere,
+# and every keyless verification also pins the source repository.
+guard_bad=""
+for j in $(awk '/^jobs:$/{f=1; next} f && /^  [a-z-]+:$/{sub(/:$/,""); print $1}' "$RB"); do
+  job "$j" | grep -qx "    if: github.repository == 'MaliSec/temper'" || guard_bad="$guard_bad $j"
+done
+[ -z "$guard_bad" ] && ok "every release job runs only in MaliSec/temper" \
+  || fail "release jobs that would run when called from another repository:$guard_bad"
+# pin_bad <file>...: the keyless cosign verify commands (joined across
+# continuation lines) whose source repository is missing or is not
+# MaliSec/temper: the literal, or "$SOURCE_REPO"/"$GH_REPO", which
+# default to it (checked below). An empty value restricts nothing.
+pin_bad() {
+  awk '/cosign verify/ && !/^ *#/ {c=$0; while (c ~ /\\$/ && (getline l) > 0) c = c " " l; print FILENAME": "c}' "$@" \
+    | grep -E -- '--certificate-identity' \
+    | grep -vE -- '--certificate-github-workflow-repository[ =](MaliSec/temper|"\$SOURCE_REPO"|"\$GH_REPO")( |$)' || true
+}
+bad=$(pin_bad scripts/*.sh docs/*.md README.md)
+[ -z "$bad" ] && ok "every keyless cosign verification pins MaliSec/temper as the source repository" \
+  || fail "keyless verification without MaliSec/temper as the source repository:"$'\n'"$bad"
+grep -qx 'SOURCE_REPO=${SOURCE_REPO:-MaliSec/temper}' scripts/verify-build.sh \
+  && grep -qx 'GH_REPO=${GH_REPO:-MaliSec/temper}' scripts/rollback-latest.sh \
+  && ok "verify-build and rollback-latest default the source repository to MaliSec/temper" \
+  || fail "SOURCE_REPO or GH_REPO no longer defaults to MaliSec/temper"
+mkdir -p "$TMP/pin"
+for v in "''" '""' 'MaliSec/other' 'MaliSec/temper-apps' '"$OTHER"' '\'; do
+  printf 'cosign verify --certificate-identity-regexp "$ID" \\\n  --certificate-github-workflow-repository %s x\n' "$v" > "$TMP/pin/f.sh"
+  [ -n "$(pin_bad "$TMP/pin/f.sh")" ] && ok "a source repository of $v is refused" || fail "a source repository of $v passed the check"
+done
+printf 'cosign verify --certificate-identity-regexp "$ID" x\n' > "$TMP/pin/f.sh"
+[ -n "$(pin_bad "$TMP/pin/f.sh")" ] && ok "a verification without a source repository is refused" \
+  || fail "a verification without a source repository passed the check"
+
 echo "== supply chain: install-tools checksum posture =="
 for var in APKO_SHA256_AMD64 APKO_SHA256_ARM64 MELANGE_SHA256_AMD64 MELANGE_SHA256_ARM64 COSIGN_SHA256_AMD64 \
            COSIGN_SHA256_ARM64 CRANE_SHA256_AMD64 CRANE_SHA256_ARM64 GRYPE_SHA256_AMD64 GRYPE_SHA256_ARM64 \

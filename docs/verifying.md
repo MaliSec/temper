@@ -25,10 +25,16 @@ calls when a date tag is pushed:
 | | Value |
 |---|---|
 | Signer identity | `https://github.com/MaliSec/temper/.github/workflows/temper-release-build.yml@refs/tags/<tag>` |
+| Source repository | `MaliSec/temper` |
 | Token issuer | `https://token.actions.githubusercontent.com` |
 
-A signature from any other repository, workflow or person does not verify
-against that identity, even if it is a valid Sigstore signature.
+Check the source repository as well as the identity. The workflow is
+public and reusable, and the identity names the workflow that ran, not
+the repository that called it: another repository calling it at one of
+Temper's tags gets a certificate with the same identity and its own
+source repository. The release jobs refuse to run outside MaliSec/temper,
+but releases cut before that check carry no such guard. A signature from
+any other repository, workflow or person does not verify against both.
 
 ## SLSA Build Level 3
 
@@ -110,6 +116,7 @@ Signature:
 cosign verify \
   --certificate-identity-regexp "$ID" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-github-workflow-repository MaliSec/temper \
   ghcr.io/malisec/temper/<name>@sha256:<digest>
 ```
 
@@ -145,6 +152,7 @@ gh release download <date tag> --repo MaliSec/temper \
 cosign verify-blob --bundle temper-<date tag>.manifest.yaml.sigstore.json \
   --certificate-identity-regexp "$ID" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-github-workflow-repository MaliSec/temper \
   temper-<date tag>.manifest.yaml
 grep -F 'digest: "sha256:<digest>"' temper-<date tag>.manifest.yaml
 ```
@@ -211,10 +219,11 @@ What it contains: `providers/gofips/docs/audit/10-evidence-manifest.md`.
 
 ## Trust anchors and their limits
 
-- The **workflow identity** is the root of trust. You are trusting that
-  only this repository's release workflow can obtain a certificate for it,
-  which rests on GitHub's token service and the Sigstore certificate
-  authority and log.
+- The **workflow identity and source repository** are the root of trust.
+  You are trusting that only a run of this repository's release workflow,
+  started in this repository, can obtain a certificate naming both, which
+  rests on GitHub's token service and the Sigstore certificate authority
+  and log. The identity alone is not enough: see the signer table above.
 - The identity names the workflow, not who pushed the tag. Any date tag
   that runs the release workflow signs with it. The workflow refuses a tag
   whose commit is not on `main`, and a repository tag ruleset limits who

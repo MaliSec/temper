@@ -36,10 +36,17 @@ env:
   IMAGE_ORG: malisec
   DATE: ${{ github.ref_name }}
 
+# Every job runs only in MaliSec/temper. The workflow is public and
+# reusable, and a certificate names the workflow that ran, not the
+# repository that called it: called from anywhere else, it would sign with
+# Temper's identity. Verification also pins the source repository
+# (--certificate-github-workflow-repository, gh attestation verify --repo),
+# which covers releases cut before this check.
 jobs:
   # Packages are compiled natively per architecture; the signing key stays
   # on each runner and the build job re-indexes both with its own.
   packages:
+    if: github.repository == 'MaliSec/temper'
     name: Packages (${{ matrix.arch }})
     strategy:
       matrix:
@@ -70,6 +77,7 @@ jobs:
           retention-days: 7
 
   build:
+    if: github.repository == 'MaliSec/temper'
     name: Build, scan, publish
     needs: packages
     runs-on: ubuntu-24.04
@@ -166,6 +174,7 @@ jobs:
           retention-days: 90
 
   attest:
+    if: github.repository == 'MaliSec/temper'
     name: Sign and attest ${{ matrix.image.name }}
     needs: build
     runs-on: ubuntu-24.04
@@ -226,6 +235,7 @@ jobs:
           push-to-registry: true
 
   evidence-suites:
+    if: github.repository == 'MaliSec/temper'
     needs: [packages, build]
     uses: ./.github/workflows/gofips-suites.yml
     with:
@@ -233,6 +243,7 @@ jobs:
       packages-artifact: release-packages-{0}
 
   evidence-capture:
+    if: github.repository == 'MaliSec/temper'
     name: gofips evidence capture
     needs: build
     runs-on: ubuntu-24.04
@@ -263,6 +274,7 @@ jobs:
   # list. The bundle is attested (SLSA provenance naming this workflow and
   # commit), so it is verifiable without trusting the repository.
   evidence-bundle:
+    if: github.repository == 'MaliSec/temper'
     name: gofips evidence bundle
     needs: [evidence-suites, evidence-capture]
     runs-on: ubuntu-24.04
@@ -308,6 +320,7 @@ jobs:
           retention-days: 7
 
   release:
+    if: github.repository == 'MaliSec/temper'
     name: Verify and publish the release
     needs: [build, attest, evidence-bundle]
     runs-on: ubuntu-24.04
