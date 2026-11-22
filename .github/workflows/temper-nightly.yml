@@ -100,21 +100,39 @@ jobs:
           IMAGE: ${{ inputs.image }}
         run: ./scripts/build.sh --lock ${IMAGE:+--image "$IMAGE"}
       - name: Package diff
-        id: diff
         run: |
           set -euo pipefail
           ./scripts/lock-diff.sh > /tmp/lock-diff.md
           cat /tmp/lock-diff.md
-          if grep -q '^No package changes' /tmp/lock-diff.md; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
+      # wolfi-dev/os is a mirror of Wolfi's own repository and normally
+      # gets commits every hour. When it falls behind, Wolfi can ship
+      # versions whose recipes are not public yet, and the carry below
+      # leaves their statements for review until they are.
+      - name: Check the Wolfi recipe mirror
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          : > /tmp/mirror.md
+          # A report only: a failed lookup warns and the carry still runs.
+          if ! newest=$(gh api "repos/wolfi-dev/os/commits?per_page=1" --jq '.[0].commit.committer.date') \
+             || ! t=$(date -u -d "$newest" +%s); then
+            echo "::warning::could not read the newest wolfi-dev/os commit"
+            exit 0
           fi
-      # Extends the VEX statements that have evidence to the new package
-      # versions, where each version's source shows the same status; the
-      # PR's CI runs their behavioural checks in the built images.
+          age=$(( ($(date -u +%s) - t) / 3600 ))
+          if [ "$age" -ge 24 ]; then
+            msg="wolfi-dev/os has had no commits for ${age}h (newest: $newest). Versions built since may have no public recipe yet; their VEX statements wait for review."
+            echo "::warning::$msg"
+            printf '%s\n' "$msg" > /tmp/mirror.md
+          fi
+      # Extends the VEX statements that have evidence to the package
+      # versions the lockfiles ship, where each version's source shows the
+      # same status; the PR's CI runs their behavioural checks in the built
+      # images. It runs every night, so a statement left for review is
+      # extended once its version's recipe is public, even with no new
+      # package versions.
       - name: Carry VEX statements
-        if: steps.diff.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -122,6 +140,15 @@ jobs:
           ./scripts/vex-carry.sh > /tmp/vex-carry.md
           cat /tmp/vex-carry.md
           ./scripts/vex-check.sh vex images
+      - name: Changes to propose
+        id: diff
+        run: |
+          set -euo pipefail
+          if ! grep -q '^No package changes' /tmp/lock-diff.md || [ -n "$(git status --porcelain -- vex/)" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
 
       # A push with the App's token runs temper-build on the PR.
       - name: Open or update the relock PR
@@ -147,6 +174,7 @@ jobs:
             cat /tmp/lock-diff.md
             echo
             cat /tmp/vex-carry.md
+            if [ -s /tmp/mirror.md ]; then echo; cat /tmp/mirror.md; fi
           } > /tmp/pr-body.md
 
           if gh pr view "$BRANCH" --json state -q .state 2>/dev/null | grep -qx OPEN; then
@@ -170,7 +198,8 @@ jobs:
       REPO: ${{ github.repository }}
     steps:
       # The relock merges only when every required check on its head
-      # passes. If it fails, tonight's release is cut from main as it is.
+      # passes and the merge is allowed. Otherwise tonight's release is cut
+      # from main as it is.
       - name: Wait for the relock checks
         id: checks
         if: needs.relock.outputs.changed == 'true'
@@ -224,9 +253,11 @@ jobs:
           set -euo pipefail
           bot="${APP_SLUG}[bot]"
           botmail="$(gh api "users/${bot}" --jq .id)+${bot}@users.noreply.github.com"
-          gh pr merge "$BRANCH" -R "$REPO" --squash --delete-branch --match-head-commit "$HEAD" \
+          if ! gh pr merge "$BRANCH" -R "$REPO" --squash --delete-branch --match-head-commit "$HEAD" \
             --subject "Relock images against Wolfi ($(date -u +%Y-%m-%d))" \
-            --body "Signed-off-by: $bot <$botmail>"
+            --body "Signed-off-by: $bot <$botmail>"; then
+            echo "::warning::the relock did not merge; releasing main without it"
+          fi
       # Today's date, or the next .N if today already has a release.
       - name: Tag main
         env:

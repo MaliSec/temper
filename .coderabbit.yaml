@@ -1,0 +1,9 @@
+# Settings not given here come from the CodeRabbit web UI.
+inheritance: true
+reviews:
+  auto_review:
+    # The nightly relock PRs: lockfiles and carried VEX statements, merged by
+    # temper-nightly once the required checks pass. A review requesting
+    # changes would block that merge.
+    ignore_usernames:
+      - "temper-release[bot]"
