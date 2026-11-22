@@ -415,6 +415,11 @@ done
 grep -v '^\s*#' scripts/install-tools.sh | grep -qE 'curl[^|]*\|\s*sh' \
   && fail "install-tools pipes curl to sh (unverified installer)" \
   || ok "no curl|sh installer in install-tools.sh"
+# A release runs dozens of jobs that each download the tools; one refused
+# download must not fail the release.
+[ -z "$(grep -E '^\s*curl ' scripts/install-tools.sh | grep -v -- '--retry 5 --retry-all-errors')" ] \
+  && ok "every tool download in install-tools.sh retries" \
+  || fail "a tool download in install-tools.sh does not retry"
 grep -E 'curl ' scripts/install-tools.sh | grep -q 'releases/download' \
   && ok "downloads come from pinned release URLs" \
   || fail "downloads are not release-pinned"

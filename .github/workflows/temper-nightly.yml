@@ -113,9 +113,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          newest=$(gh api "repos/wolfi-dev/os/commits?per_page=1" --jq '.[0].commit.committer.date')
-          age=$(( ($(date -u +%s) - $(date -u -d "$newest" +%s)) / 3600 ))
           : > /tmp/mirror.md
+          # A report only: a failed lookup warns and the carry still runs.
+          if ! newest=$(gh api "repos/wolfi-dev/os/commits?per_page=1" --jq '.[0].commit.committer.date') \
+             || ! t=$(date -u -d "$newest" +%s); then
+            echo "::warning::could not read the newest wolfi-dev/os commit"
+            exit 0
+          fi
+          age=$(( ($(date -u +%s) - t) / 3600 ))
           if [ "$age" -ge 24 ]; then
             msg="wolfi-dev/os has had no commits for ${age}h (newest: $newest). Versions built since may have no public recipe yet; their VEX statements wait for review."
             echo "::warning::$msg"
