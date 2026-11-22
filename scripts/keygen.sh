@@ -10,7 +10,7 @@
 #   ./scripts/keygen.sh          # skip if melange.rsa already exists
 #   FORCE=1 ./scripts/keygen.sh  # regenerate even if present
 set -euo pipefail
-cd "$(dirname "$0")/.."
+. "$(dirname "$0")/project.sh"
 
 command -v melange >/dev/null 2>&1 || {
   echo "melange not found on PATH — run: make install-tools" >&2

@@ -1,0 +1,3 @@
+# The config trivy, grype and syft read instead of any in the project's
+# checkout (.trivyignore, trivy.yaml, .grype.yaml, .syft.yaml): empty, so
+# a project's files cannot filter the release scans, the gate or the SBOM.

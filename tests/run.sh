@@ -120,24 +120,26 @@ grep -q 'cosign public key not found' <<<"$out" && ok "verify with a missing pub
   || fail "verify with a missing public key: $out"
 
 echo "== release-boundary: cut-registry.sh argument contracts =="
-expect_fail "cut without REGISTRY fails" env DATE=2026.01.01 COSIGN_PRIVATE_KEY=/dev/null ./scripts/cut-registry.sh
-expect_fail "cut without DATE fails" env REGISTRY=reg.example IMAGE_ORG=o COSIGN_PRIVATE_KEY=/dev/null ./scripts/cut-registry.sh
-expect_fail "key-mode cut with a missing key file fails" env REGISTRY=reg.example IMAGE_ORG=o DATE=2026.01.01 COSIGN_PRIVATE_KEY=tests/fixtures/no-such.key ./scripts/cut-registry.sh
+for r in reg.example Reg.example/o reg.example/o/ "https://reg.example/o"; do
+  expect_fail "cut with IMAGE_REPO=$r fails" env IMAGE_REPO="$r" DATE=2026.01.01 COSIGN_PRIVATE_KEY=/dev/null ./scripts/cut-registry.sh
+done
+expect_fail "cut without DATE fails" env IMAGE_REPO=reg.example/o COSIGN_PRIVATE_KEY=/dev/null ./scripts/cut-registry.sh
+expect_fail "key-mode cut with a missing key file fails" env IMAGE_REPO=reg.example/o DATE=2026.01.01 COSIGN_PRIVATE_KEY=tests/fixtures/no-such.key ./scripts/cut-registry.sh
 # Outside the release workflow, a keyless cut must stop before stage 2.
 for phase in "" publish finalize; do
   out=$(env -u GITHUB_ACTIONS -u COSIGN_PRIVATE_KEY \
-    REGISTRY=reg.example IMAGE_ORG=o DATE=2026.01.01 ./scripts/cut-registry.sh $phase 2>&1) && rc=0 || rc=$?
+    IMAGE_REPO=reg.example/o DATE=2026.01.01 ./scripts/cut-registry.sh $phase 2>&1) && rc=0 || rc=$?
   if [ "$rc" != 0 ] && ! echo "$out" | grep -q 'stage 2'; then
     ok "keyless cut (${phase:-no phase}) outside the release workflow fails before any stage runs"
   else
     fail "keyless cut (${phase:-no phase}) outside the release workflow did not fail early"
   fi
 done
-expect_fail "unknown cut phase fails" env REGISTRY=reg.example IMAGE_ORG=o DATE=2026.01.01 ./scripts/cut-registry.sh bogus
-expect_fail "malformed DATE tag fails" env REGISTRY=reg.example IMAGE_ORG=o DATE=2026.1.1 COSIGN_PRIVATE_KEY=/dev/null ./scripts/cut-registry.sh
-expect_fail "malformed same-day suffix fails" env REGISTRY=reg.example IMAGE_ORG=o DATE=2026.01.01-1 COSIGN_PRIVATE_KEY=/dev/null ./scripts/cut-registry.sh
+expect_fail "unknown cut phase fails" env IMAGE_REPO=reg.example/o DATE=2026.01.01 ./scripts/cut-registry.sh bogus
+expect_fail "malformed DATE tag fails" env IMAGE_REPO=reg.example/o DATE=2026.1.1 COSIGN_PRIVATE_KEY=/dev/null ./scripts/cut-registry.sh
+expect_fail "malformed same-day suffix fails" env IMAGE_REPO=reg.example/o DATE=2026.01.01-1 COSIGN_PRIVATE_KEY=/dev/null ./scripts/cut-registry.sh
 for t in 2026.01.01.0 2026.01.01.01; do
-  expect_fail "same-day suffix $t fails (it would tie with the plain date)" env REGISTRY=reg.example IMAGE_ORG=o DATE=$t COSIGN_PRIVATE_KEY=/dev/null ./scripts/cut-registry.sh
+  expect_fail "same-day suffix $t fails (it would tie with the plain date)" env IMAGE_REPO=reg.example/o DATE=$t COSIGN_PRIVATE_KEY=/dev/null ./scripts/cut-registry.sh
   expect_fail "rollback to $t fails" ./scripts/rollback-latest.sh $t --dry-run
 done
 expect_fail "build.sh --images with a filter that matches nothing fails" env OUT_DIR="$TMP/nomatch" ./scripts/build.sh --images --image nosuch-image
@@ -153,10 +155,10 @@ out=$(PATH="$TMP/vstub:$PATH" ./scripts/verify-build.sh localhost:1/o/temper/x@s
 grep -q 'is not a release tag' <<<"$out" && ok "verify-build refuses a .0 same-day suffix" \
   || fail "verify-build accepted --date 2026.01.01.0: $out"
 # An older line (a repo file) must have a version line of its own.
-CUT="$TMP/cutrepo"; mkdir -p "$CUT/images"; cp -r scripts "$CUT/"; cp -r images/node "$CUT/images/node"
+CUT="$TMP/cutrepo"; mkdir -p "$CUT/images"; cp -r scripts project.env "$CUT/"; cp -r images/node "$CUT/images/node"
 mkdir -p "$CUT/images/node-x"; cp images/static/apko.yaml "$CUT/images/node-x/"; echo node > "$CUT/images/node-x/repo"
 echo dummy > "$TMP/dummy.key"
-out=$(cd "$CUT" && env REGISTRY=localhost:1 IMAGE_ORG=o DATE="$(date -u +%Y.%m.%d)" OUT_DIR="$TMP/cutrepo-dist" \
+out=$(cd "$CUT" && env IMAGE_REPO=localhost:1/o DATE="$(date -u +%Y.%m.%d)" OUT_DIR="$TMP/cutrepo-dist" \
   COSIGN_PRIVATE_KEY="$TMP/dummy.key" TEMPER_REV=unknown ./scripts/cut-registry.sh 2>&1 || true)
 grep -q 'publishes to .node. as an older line but has no version line' <<<"$out" \
   && ok "the cut refuses an older-line image without a version line" \
@@ -173,7 +175,7 @@ done
 job build | grep -q 'id-token' \
   && fail "the build job can mint OIDC tokens (signing credentials reach build steps)" \
   || ok "the build job has no id-token permission"
-job attest | grep -qE 'build\.sh|apko|melange|syft|trivy|grype' \
+{ job attest; cat .github/actions/attest/action.yml; } | grep -qE 'build\.sh|apko|melange|syft|trivy|grype' \
   && fail "the attest job runs build or scan steps" \
   || ok "the attest job runs no build or scan steps"
 job evidence-capture | grep -q 'id-token' \
@@ -185,7 +187,7 @@ job evidence-bundle | grep -qE 'build\.sh|apko|melange|capture/run\.sh' \
 job release | grep -q 'needs: \[build, attest, evidence-bundle\]' \
   && ok "the release publishes tags only after the evidence bundle is attested" \
   || fail "the release job does not wait for the evidence bundle"
-job attest | grep -q 'uses: actions/attest@' \
+job attest | grep -q 'uses: ./.github/actions/attest' && grep -q 'uses: actions/attest@' .github/actions/attest/action.yml \
   && ok "provenance is generated by actions/attest, not by the build" \
   || fail "the attest job does not use actions/attest"
 grep -rq 'slsa.dev/provenance/v0.2' scripts .github \
@@ -219,8 +221,9 @@ pin_bad() {
 bad=$(pin_bad scripts/*.sh docs/*.md README.md)
 [ -z "$bad" ] && ok "every keyless cosign verification pins MaliSec/temper as the source repository" \
   || fail "keyless verification without MaliSec/temper as the source repository:"$'\n'"$bad"
-grep -qx 'SOURCE_REPO=${SOURCE_REPO:-MaliSec/temper}' scripts/verify-build.sh \
-  && grep -qx 'GH_REPO=${GH_REPO:-MaliSec/temper}' scripts/rollback-latest.sh \
+grep -qx 'repo=MaliSec/temper' project.env \
+  && grep -qx 'SOURCE_REPO=${SOURCE_REPO:-$PROJECT_REPO}' scripts/verify-build.sh \
+  && grep -qx 'GH_REPO=${GH_REPO:-$PROJECT_REPO}' scripts/rollback-latest.sh \
   && ok "verify-build and rollback-latest default the source repository to MaliSec/temper" \
   || fail "SOURCE_REPO or GH_REPO no longer defaults to MaliSec/temper"
 mkdir -p "$TMP/pin"
@@ -231,6 +234,176 @@ done
 printf 'cosign verify --certificate-identity-regexp "$ID" x\n' > "$TMP/pin/f.sh"
 [ -n "$(pin_bad "$TMP/pin/f.sh")" ] && ok "a verification without a source repository is refused" \
   || fail "a verification without a source repository passed the check"
+
+
+echo "== another repository's releases: scripts/project.sh and .github/actions =="
+# A second project, released with these scripts as the actions run them:
+# from the project's own checkout, with the scripts in Temper's.
+TH=$(pwd)
+APPS="$TMP/apps"; mkdir -p "$APPS/images/app" "$APPS/vex" "$TMP/astub"
+cp images/static/apko.yaml "$APPS/images/app/"
+printf 'name=temper-apps\ntitle=Temper Apps\nrepo=MaliSec/temper-apps\nrelease_workflow=temper-apps-release-build.yml\nimages=r.example/malisec/temper-apps\n' > "$APPS/project.env"
+apps() { (cd "$APPS" && env TEMPER_PROJECT_DIR="$APPS" "$@"); }
+d0=sha256:0000000000000000000000000000000000000000000000000000000000000000
+temper_id='https://github.com/MaliSec/temper/.github/workflows/temper-release-build.yml@refs/tags/2026.01.01'
+apps_id='https://github.com/MaliSec/temper-apps/.github/workflows/temper-apps-release-build.yml@refs/tags/2026.01.01'
+# Stubs that record their arguments: crane resolves :2026.01.01 and finds
+# no other tag, gh and cosign accept everything.
+cat > "$TMP/astub/cosign" <<STUB
+#!/bin/sh
+echo "\$@" >> "$TMP/astub/cosign.log"
+STUB
+cat > "$TMP/astub/crane" <<STUB
+#!/bin/sh
+echo "\$@" >> "$TMP/astub/crane.log"
+case "\$1:\$2" in
+  manifest:*) echo '{"mediaType":"application/vnd.oci.image.manifest.v1+json"}' ;;
+  digest:*:2026.01.01) echo $d0 ;;
+  digest:*) echo MANIFEST_UNKNOWN; exit 1 ;;
+esac
+exit 0
+STUB
+cat > "$TMP/astub/gh" <<STUB
+#!/bin/sh
+echo "\$@" >> "$TMP/astub/gh.log"
+STUB
+chmod +x "$TMP/astub/"*
+stubs() { : > "$TMP/astub/cosign.log"; : > "$TMP/astub/crane.log"; : > "$TMP/astub/gh.log"; }
+# signer_re: the identity regex of the first cosign call.
+signer_re() { sed -n 's/.*--certificate-identity-regexp \([^ ]*\).*/\1/p' "$TMP/astub/cosign.log" | head -1; }
+stubs; PATH="$TMP/astub:$PATH" TEMPER_REV=unknown ./scripts/verify-build.sh "r.example/o/x@$d0" >/dev/null 2>&1 || true
+re_temper=$(signer_re)
+stubs; apps env PATH="$TMP/astub:$PATH" TEMPER_REV=unknown "$TH/scripts/verify-build.sh" "r.example/o/x@$d0" >/dev/null 2>&1 || true
+re_apps=$(signer_re)
+if [ -n "$re_temper" ] && [ -n "$re_apps" ] \
+   && grep -qE "$re_temper" <<<"$temper_id" && ! grep -qE "$re_temper" <<<"$apps_id" \
+   && grep -qE "$re_apps" <<<"$apps_id" && ! grep -qE "$re_apps" <<<"$temper_id" \
+   && grep -q -- '--certificate-github-workflow-repository MaliSec/temper-apps ' "$TMP/astub/cosign.log" \
+   && grep -q -- '--repo MaliSec/temper-apps ' "$TMP/astub/gh.log"; then
+  ok "each project's verify-build accepts its own release signer and repository, not the other's"
+else fail "project signers: temper '$re_temper', apps '$re_apps'"; fi
+# A bare name and --date: the project's images, signed for that tag only.
+stubs; out=$(apps env PATH="$TMP/astub:$PATH" TEMPER_REV=unknown "$TH/scripts/verify-build.sh" app --date 2026.01.01 2>&1) || true
+want='^https://github\.com/MaliSec/temper-apps/\.github/workflows/temper-apps-release-build\.yml@refs/tags/2026\.01\.01$'
+[ "$(signer_re)" = "$want" ] && grep -q "r.example/malisec/temper-apps/app@$d0\$" "$TMP/astub/cosign.log" \
+  && grep -qF "signer: $want, from MaliSec/temper-apps" <<<"$out" \
+  && ok "verify-build --date looks the name up in the project's images and names the release's signer" \
+  || fail "verify-build --date for another project: signer '$(signer_re)', output: $(head -3 <<<"$out")"
+# Dots in the repository and workflow are literal.
+mkdir -p "$TMP/dotproj"; sed -e 's/^repo=.*/repo=MaliSec\/temper.apps/' -e 's/^release_workflow=.*/release_workflow=r.yml/' \
+  "$APPS/project.env" > "$TMP/dotproj/project.env"
+stubs; (cd "$TMP/dotproj" && env TEMPER_PROJECT_DIR="$TMP/dotproj" PATH="$TMP/astub:$PATH" TEMPER_REV=unknown \
+  "$TH/scripts/verify-build.sh" "r.example/o/x@$d0" >/dev/null 2>&1) || true
+re=$(signer_re)
+[ -n "$re" ] && grep -qE "$re" <<<'https://github.com/MaliSec/temper.apps/.github/workflows/r.yml@refs/tags/2026.01.01' \
+  && ! grep -qE "$re" <<<'https://github.com/MaliSec/temperXapps/.github/workflows/r.yml@refs/tags/2026.01.01' \
+  && ! grep -qE "$re" <<<'https://github.com/MaliSec/temper.apps/.github/workflows/rXyml@refs/tags/2026.01.01' \
+  && ok "the signer regex matches the repository and workflow literally" \
+  || fail "the signer regex does not escape the repository or workflow: $re"
+# The release phase, keyless: every image verified against this release's
+# signer, the files named after the project, nothing named after Temper.
+DT=$(date -u +%Y.%m.%d); AD="$TMP/apps-dist"; ACUT="$AD/registry-cut/$DT"; mkdir -p "$ACUT"
+jq -n --arg d "$d0" '{scan_db: "x", scan_db_trivy: "x", gate_vulns: "true", images: [{name: "app",
+  repository: "r.example/malisec/temper-apps/app", digest: $d, primary: true, line: "", vulns_grype: "g",
+  vulns_trivy: "t", platforms: [{arch: "amd64", digest: $d}]}]}' > "$ACUT/images.json"
+echo '{}' > "$ACUT/temper-apps-$DT.scans.json"; echo '{}' > "$ACUT/temper-apps-$DT.vex.json"
+stubs; out=$(apps env -u CERT_IDENTITY_REGEXP PATH="$TMP/astub:$PATH" GITHUB_ACTIONS=true DATE="$DT" OUT_DIR="$AD" TEMPER_REV=unknown \
+  "$TH/scripts/cut-registry.sh" finalize 2>&1) && rc=0 || rc=$?
+m="$ACUT/temper-apps-$DT.manifest.yaml"
+want="^https://github\\.com/MaliSec/temper-apps/\\.github/workflows/temper-apps-release-build\\.yml@refs/tags/${DT//./\\.}\$"
+if [ "$rc" = 0 ] && [ -f "$m" ] && [ "$(head -1 "$m")" = "# Temper Apps release $DT (scripts/cut-registry.sh)" ] \
+   && grep -qx 'image_repository: "r.example/malisec/temper-apps"' "$m" \
+   && [ "$(sed -n 's/^signer_identity_regexp: "\(.*\)"$/\1/p' "$m" | sed 's/\\\\/\\/g')" = "$want" ] \
+   && [ "$(signer_re)" = "$want" ] && grep -q -- '--certificate-github-workflow-repository MaliSec/temper-apps ' "$TMP/astub/cosign.log" \
+   && grep -qx "tag r.example/malisec/temper-apps/app@$d0 $DT" "$TMP/astub/crane.log" \
+   && [ -z "$(find "$AD" -name 'temper-2*')" ]; then
+  ok "another project's release is verified against its own signer, tagged in its images, and named after it"
+else fail "another project's finalize (exit $rc): $(tail -3 <<<"$out")"; fi
+out=$(apps "$TH/scripts/image-line.sh" app 2>&1) && [ -z "$out" ] \
+  && ! apps "$TH/scripts/image-line.sh" node >/dev/null 2>&1 \
+  && ok "the scripts act on TEMPER_PROJECT_DIR's images, not Temper's" \
+  || fail "image-line read Temper's images for another project: $out"
+echo '{"@context": "https://openvex.dev/ns/v0.2.0", "statements": []}' > "$APPS/vex/CVE-1.json"
+apps "$TH/scripts/vex-merge.sh" vex 2026.01.01 | jq -e '."@id" == "https://github.com/MaliSec/temper-apps/releases/tag/2026.01.01#vex"' >/dev/null \
+  && ok "vex-merge names the project's own release" || fail "vex-merge named another repository's release"
+avex() { jq -n --arg p "pkg:oci/app?repository_url=$1/app" '{"@context": "https://openvex.dev/ns/v0.2.0", "@id": "https://example.test/v",
+  author: "t", timestamp: "2026-01-01T00:00:00Z", version: 1, statements: [{vulnerability: {name: "CVE-1"},
+  products: [{"@id": $p, subcomponents: [{"@id": "pkg:apk/wolfi/zlib@0-r0"}]}], status: "affected", action_statement: "x"}]}' > "$APPS/vex/CVE-1.json"; }
+avex r.example/malisec/temper-apps; apps "$TH/scripts/vex-check.sh" >/dev/null 2>&1 && a=0 || a=1
+avex ghcr.io/malisec/temper; apps "$TH/scripts/vex-check.sh" >/dev/null 2>&1 && b=0 || b=1
+[ "$a$b" = 01 ] && ok "vex-check takes products in the project's images, not Temper's" \
+  || fail "vex-check products for another project: own $a, Temper's $b (0 = accepted)"
+rm -f "$APPS/vex/CVE-1.json"
+out=$(env TEMPER_PROJECT_DIR="$APPS" ./scripts/vex-check.sh 2>&1) && grep -q '^vex: 0 file(s)' <<<"$out" \
+  && ok "vex-check's default directories are the project's, wherever it is run from" \
+  || fail "vex-check run from Temper's checkout for another project: $(tail -1 <<<"$out")"
+for bad in 'repo=MaliSec' 'release_workflow=x.sh' 'name=Temper' 'owner=x' 'images=ghcr.io' 'images=ghcr.io/x/' \
+           'images=ghcr.io/X' 'images=ghcr.io/x:1' 'images=https://ghcr.io/x'; do
+  mkdir -p "$TMP/badproj"; { grep -v "^${bad%%=*}=" "$APPS/project.env"; echo "$bad"; } > "$TMP/badproj/project.env"
+  out=$(env TEMPER_PROJECT_DIR="$TMP/badproj" ./scripts/image-line.sh app 2>&1) \
+    && fail "project.env with '$bad' was accepted" \
+    || { grep -q '^project.env: ' <<<"$out" && ok "project.env with '$bad' is refused" || fail "project.env with '$bad': $out"; }
+done
+mkdir -p "$TMP/nonl"; printf '%s' "$(cat "$APPS/project.env")" > "$TMP/nonl/project.env"
+cp -r "$APPS/images" "$TMP/nonl/"
+env TEMPER_PROJECT_DIR="$TMP/nonl" ./scripts/image-line.sh app >/dev/null 2>&1 \
+  && ok "a project.env without a final newline keeps its last key" \
+  || fail "a project.env without a final newline loses its last key"
+# A relative --manifest is read from where the command runs, not from the
+# project checkout the scripts change into.
+mkdir -p "$TMP/mf"; printf 'images:\n  x:\n    repository: "r.example/o/x"\n    digest: "%s"\n' "$d0" > "$TMP/mf/m.yaml"
+echo '{}' > "$TMP/mf/m.yaml.sigstore.json"
+stubs; out=$(cd "$TMP/mf" && env TEMPER_PROJECT_DIR="$APPS" PATH="$TMP/astub:$PATH" TEMPER_REV=unknown \
+  "$TH/scripts/verify-build.sh" "r.example/o/x@$d0" --manifest m.yaml 2>&1) \
+  && grep -qF "listed in $TMP/mf/m.yaml: OK" <<<"$out" \
+  && ok "a relative --manifest is read from the current directory" \
+  || fail "a relative --manifest from another directory: $(tail -2 <<<"$out")"
+mkdir -p "$TMP/noproj"
+out=$(env TEMPER_PROJECT_DIR="$TMP/noproj" ./scripts/image-line.sh app 2>&1) \
+  && fail "a project without project.env was accepted" \
+  || { grep -qx "$TMP/noproj/project.env missing (see scripts/project.sh)" <<<"$out" \
+       && ok "a project without project.env is refused" || fail "a project without project.env: $out"; }
+# Pinned from another repository, an action runs from its own checkout of
+# Temper and acts on the caller's: scripts by $GITHUB_ACTION_PATH, the
+# project by $GITHUB_WORKSPACE (in a container job too) in every step that
+# runs one. Inputs reach scripts through env, never expanded into the
+# script text.
+acts_bad=""
+for a in .github/actions/*/action.yml; do
+  grep -qE '(^|[^./_A-Za-z])\./scripts/' "$a" && acts_bad="$acts_bad $a:./scripts"
+  grep -q 'scripts/' "$a" && ! grep -q 'GITHUB_ACTION_PATH/../../../scripts/' "$a" && acts_bad="$acts_bad $a:path"
+  grep -q 'github\.workspace' "$a" && acts_bad="$acts_bad $a:github.workspace"
+  steps=$(awk '/^    - name: /{n++} n{print n"\t"$0}' "$a")
+  for n in $(cut -f1 <<<"$steps" | sort -un); do
+    s=$(awk -F'\t' -v n="$n" '$1 == n {sub(/^[^\t]*\t/, ""); print}' <<<"$steps")
+    grep -qE 'scripts/(build|cut-registry|project|image-line|lock-diff|vex-[a-z]+|scans-json)\.sh' <<<"$s" || continue
+    grep -qx '        export TEMPER_PROJECT_DIR="$GITHUB_WORKSPACE"' <<<"$s" || acts_bad="$acts_bad $a:step$n"
+  done
+  awk '/^ *run: [|>]/{r=1; i=match($0,/[^ ]/); next} r && match($0,/[^ ]/) && RSTART<=i {r=0} /^ *run: /&&!/run: [|>]/{print} r{print}' "$a" | grep -q '\${{' && acts_bad="$acts_bad $a:interpolated"
+done
+[ -z "$acts_bad" ] && ok "the release actions run their own scripts on the caller's repository, inputs through env" \
+  || fail "release actions:$acts_bad"
+job build | grep -q 'uses: ./.github/actions/publish' && job release | grep -q 'uses: ./.github/actions/release' \
+  && job packages | grep -q 'uses: ./.github/actions/packages' \
+  && ok "Temper's own release runs the same actions" || fail "Temper's release does not use the shared actions"
+# The publish phase pushes, and checks tags, only under IMAGE_REPO: no
+# script names MaliSec's namespace itself.
+ns=$(grep -niE 'malisec/' scripts/*.sh | grep -vE '^[^:]+:[0-9]+: *#' || true)
+cr=scripts/cut-registry.sh
+[ -z "$ns" ] && grep -qF 'ref="${IMAGE_REPO}/$(image_repo "$name")"' "$cr" \
+  && grep -qF 'require_tag_absent "${IMAGE_REPO}/${repo}:${DATE}"' "$cr" \
+  && ok "images publish only under IMAGE_REPO (project.env's images by default)" \
+  || fail "a script names its own registry namespace or publishes outside IMAGE_REPO:"$'\n'"$ns"
+# The scanners read Temper's empty config, never the project's files.
+cr=scripts/cut-registry.sh pa=.github/actions/publish/action.yml
+[ -z "$(grep -vE '^ *#' scripts/scanners.yaml)" ] \
+  && [ "$(grep -cE '"\$(TRIVY|GRYPE|SYFT)" (image|db|"registry)' "$cr")" = 4 ] \
+  && [ "$(grep -E '"\$(TRIVY|GRYPE|SYFT)" (image|db|"registry)' "$cr" | grep -cE -- '(-c|--config) "\$SCANNER_CONFIG"')" = 4 ] \
+  && grep -qx 'SCANNER_CONFIG="$TEMPER_HOME/scripts/scanners.yaml"' "$cr" \
+  && grep -A1 '"$TRIVY" image' "$cr" | grep -q -- '--ignorefile /dev/null' \
+  && [ "$(grep -cE '^ +(trivy|grype) ' "$pa")" = 3 ] && [ "$(grep -E '^ +(trivy|grype) ' "$pa" | grep -cE -- '(-c|--config) "\$c"')" = 3 ] \
+  && ok "trivy, grype and syft ignore config and ignore files in the project's checkout" \
+  || fail "a scanner call can read the project's own config or ignore file"
 
 echo "== supply chain: install-tools checksum posture =="
 for var in APKO_SHA256_AMD64 APKO_SHA256_ARM64 MELANGE_SHA256_AMD64 MELANGE_SHA256_ARM64 COSIGN_SHA256_AMD64 \
@@ -255,7 +428,7 @@ echo "== signing contract: keyless by default, no key material in the repo =="
 grep -q 'certificate-identity-regexp' scripts/verify-build.sh scripts/cut-registry.sh \
   && ok "cut and verify check the signer's workflow identity" \
   || fail "cut/verify do not check a signer identity"
-grep -q 'MaliSec/temper/\\.github/workflows/temper-release' scripts/verify-build.sh \
+grep -q 'CERT_IDENTITY_REGEXP:-"${SIGNER_RE}@refs/tags/' scripts/verify-build.sh \
   && ok "verify-build defaults to this project's release workflow as signer" \
   || fail "verify-build default signer is not the release workflow"
 if grep -v '^\s*#' scripts/verify-build.sh | grep -q 'cosign download attestation'; then
@@ -345,27 +518,17 @@ expect_fail "a shell name that is a hard link is a policy violation" ./scripts/c
 make_oci_tar "$POLICY/twolayer-ok.tar" 65532 "usr/bin/app 0755" --layer "etc/app.conf 0644"
 expect_ok "a clean two-layer image passes" ./scripts/check-policy.sh "$POLICY/twolayer-ok.tar"
 
-echo "== repository layout: nested temper/<name> resolution =="
-resolve_ref() { # mirrors verify-build.sh's bare-name composition
-  local ref="$1" registry="$2" org="$3"
-  if [[ "$ref" != *@* ]]; then
-    echo "${registry}/${org}/${ref}"
-  else
-    echo "$ref"
-  fi
-}
-r=$(resolve_ref "temper/static" reg.example example-org)
-[ "$r" = "reg.example/example-org/temper/static" ] \
-  && ok "nested temper/<name> composes under IMAGE_ORG" \
-  || fail "nested name composed to: $r"
-r=$(resolve_ref "static" reg.example example-org)
-[ "$r" = "reg.example/example-org/static" ] \
-  && ok "flat <name> still composes (compat)" \
-  || fail "flat name composed to: $r"
-r=$(resolve_ref "reg.example/other/name@sha256:abc" reg.example example-org)
-[ "$r" = "reg.example/other/name@sha256:abc" ] \
-  && ok "digest refs pass through untouched" \
-  || fail "digest ref mangled: $r"
+echo "== image references: verify-build's bare names =="
+# vref <ref> [env...]: the reference verify-build's first cosign call checks.
+vref() { local ref="$1"; shift; stubs
+  env "$@" PATH="$TMP/astub:$PATH" TEMPER_REV=unknown ./scripts/verify-build.sh "$ref" --date 2026.01.01 >/dev/null 2>&1 || true
+  awk '{print $NF; exit}' "$TMP/astub/cosign.log"; }
+[ "$(vref static)" = "ghcr.io/malisec/temper/static@$d0" ] && ok "a bare name is looked up in project.env's images" \
+  || fail "a bare name resolved to: $(vref static)"
+[ "$(vref static IMAGE_REPO=reg.example/o)" = "reg.example/o/static@$d0" ] && ok "IMAGE_REPO overrides where a bare name is looked up" \
+  || fail "IMAGE_REPO=reg.example/o resolved static to: $(vref static IMAGE_REPO=reg.example/o)"
+[ "$(vref reg.example/other/name)" = "reg.example/other/name@$d0" ] && ok "a reference with a registry is used as given" \
+  || fail "reg.example/other/name resolved to: $(vref reg.example/other/name)"
 
 echo "== lockfile drift gate: copies the committed lockfiles before regenerating =="
 # Checked on the workflow text: copying the lockfiles after the --lock run
@@ -487,8 +650,8 @@ if out=$(IMAGES_DIR="$sj/images" ./scripts/scans-json.sh "$sj/records.json" "$sj
         = '[["CVE-1:fixed","CVE-2:-"],["CVE-1:fixed"]]' ]; then
   ok "scans-json marks a finding with the statement for its vulnerability, image and exact package version"
 else fail "scans-json applied VEX statements to the wrong findings"; fi
-grep -q 'vex-check.sh vex images' scripts/cut-registry.sh && grep -q 'vex_sha256' scripts/cut-registry.sh \
-  && grep -q 'temper-${DATE}.vex.json' .github/workflows/temper-release-build.yml \
+grep -q 'vex-check.sh" vex images' scripts/cut-registry.sh && grep -q 'vex_sha256' scripts/cut-registry.sh \
+  && grep -q '${PROJECT_NAME}-${DATE}.vex.json' .github/actions/release/action.yml \
   && ok "the release checks the VEX statements, records the VEX file's sha256 and attaches it" \
   || fail "the release does not check, record or attach the VEX file"
 grep -q 'negligible=$(gsev Negligible)' scripts/cut-registry.sh \
@@ -703,13 +866,13 @@ dups=$(for d in images/*/; do n=$(basename "$d"); r=$(if [ -f "$d/repo" ]; then 
 mkdir -p "$TMP/stub"
 printf '#!/bin/sh\nexit 1\n' > "$TMP/stub/cosign"; cp "$TMP/stub/cosign" "$TMP/stub/crane"; chmod +x "$TMP/stub/"*
 for t in latest 24; do
-  out=$(PATH="$TMP/stub:$PATH" REGISTRY=r IMAGE_ORG=o ./scripts/verify-build.sh temper/node --date "$t" 2>&1 || true)
+  out=$(PATH="$TMP/stub:$PATH" ./scripts/verify-build.sh node --date "$t" 2>&1 || true)
   grep -q 'is not a release tag' <<<"$out" && ok "verify-build refuses the floating tag '$t'" \
     || fail "verify-build accepted or mishandled the floating tag '$t': $out"
 done
 cr=scripts/cut-registry.sh
 if grep -qF 'for t in $([ "$primary" = true ] && echo "$DATE") ${line:+"${line}-${DATE}"}' "$cr" \
-   && grep -qF 'require_tag_absent "${REGISTRY}/${IMAGE_REPO}/${repo}:${line}-${DATE}"' "$cr" \
+   && grep -qF 'require_tag_absent "${IMAGE_REPO}/${repo}:${line}-${DATE}"' "$cr" \
    && grep -qF 'crane tag "${repo}@${digest}" "$line"' "$cr" \
    && grep -qF 'for t in $([ "$primary" = true ] && echo latest) ${line:+"$line"}' scripts/rollback-latest.sh; then
   ok "releases tag <line>-<date> immutably (the date and latest on the primary line only), advance <line> forward-only, and rollback moves it"
@@ -721,7 +884,7 @@ fi
 # so a failed cut leaves no tag; an existing date tag stops it.
 cr=scripts/cut-registry.sh
 push_line=$(grep -n 'crane copy "$STAGE/$name@$digest" "${ref}@${digest}"' "$cr" | head -1 | cut -d: -f1 || true)
-verify_line=$(grep -n './scripts/verify-build.sh "$pinned"' "$cr" | head -1 | cut -d: -f1 || true)
+verify_line=$(grep -n '"$TEMPER_HOME/scripts/verify-build.sh" "$pinned"' "$cr" | head -1 | cut -d: -f1 || true)
 tag_line=$(grep -n 'tag_once "$repo" "$digest" "$t"' "$cr" | head -1 | cut -d: -f1 || true)
 if [ -n "$push_line" ] && [ -n "$verify_line" ] && [ -n "$tag_line" ] && [ "$verify_line" -lt "$tag_line" ] \
    && ! grep -qE 'crane (push|copy) [^|]*:\$\{DATE\}' "$cr" && [ "$(grep -c 'require_tag_absent "' "$cr")" -ge 2 ]; then

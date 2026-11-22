@@ -20,6 +20,11 @@
 #            this release if it is the newest, then signs the manifest
 #            and creates the GitHub release with the manifest and the
 #            evidence bundle.
+#
+# The steps of build, attest and release are composite actions in
+# .github/actions, which other repositories' release workflows use, pinned
+# to a Temper commit. The jobs and their permissions stay here: the
+# signature names the workflow that runs the job, not the action.
 name: temper-release-build
 
 on:
@@ -29,11 +34,6 @@ permissions:
   contents: read
 
 env:
-  MELANGE_RUNNER: docker
-  ARCHS: x86_64,aarch64
-  OUT_DIR: dist
-  REGISTRY: ghcr.io
-  IMAGE_ORG: malisec
   DATE: ${{ github.ref_name }}
 
 # Every job runs only in MaliSec/temper. The workflow is public and
@@ -60,21 +60,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Install apko and melange
-        run: |
-          TOOLS="apko melange" ./scripts/install-tools.sh
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-
       - name: Build packages
-        run: ./scripts/build.sh --packages --arch "${{ matrix.arch }}"
-
-      - name: Upload packages
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        uses: ./.github/actions/packages
         with:
-          name: release-packages-${{ matrix.arch }}
-          path: packages/${{ matrix.arch }}/*.apk
-          if-no-files-found: error
-          retention-days: 7
+          arch: ${{ matrix.arch }}
 
   build:
     if: github.repository == 'MaliSec/temper'
@@ -92,38 +81,9 @@ jobs:
         with:
           fetch-depth: 0
 
-      # The signing identity accepts any date tag, so a release must come
-      # from a commit on main.
-      - name: Require the tagged commit on main
-        run: |
-          set -euo pipefail
-          git fetch --no-tags origin main
-          git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD \
-            || { echo "::error::${GITHUB_REF_NAME} is not on main; releases are cut only from main" >&2; exit 1; }
-
-      - name: Install pinned toolchain
-        run: |
-          TOOLS="apko melange crane grype syft trivy" ./scripts/install-tools.sh
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          command -v jq >/dev/null || { echo "jq not available on this runner image" >&2; exit 1; }
-
-      - name: Download packages (both architectures)
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          pattern: release-packages-*
-          path: pkg-artifacts
-
-      # Every image is built for both architectures from the committed
-      # lockfiles; apko assembles the arm64 image without running it.
-      - name: Build images from the committed lockfiles
-        run: |
-          set -euo pipefail
-          for a in x86_64 aarch64; do
-            mkdir -p "packages/$a"
-            cp "pkg-artifacts/release-packages-$a/"*.apk "packages/$a/"
-          done
-          ./scripts/build.sh --index
-          ./scripts/build.sh --images --arch "$ARCHS"
+      - name: Build, scan, publish
+        id: publish
+        uses: ./.github/actions/publish
 
       # The provider suites run in these images (both architectures).
       - name: Upload the node and go-builder images for the evidence suites
@@ -135,43 +95,6 @@ jobs:
             dist/go-builder.tar
           if-no-files-found: error
           retention-days: 7
-
-      # The token goes to docker login over stdin only, never an argv flag.
-      - name: Registry login
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_ACTOR: ${{ github.actor }}
-        run: |
-          set -euo pipefail
-          printf '%s' "$GH_TOKEN" | docker login "$REGISTRY" --username "$GH_ACTOR" --password-stdin >/dev/null
-
-      # --download-db-only never scans: it refreshes the cache the cut reads
-      # with --skip-db-update. A failed download fails the release before
-      # any scan runs (scanning against a stale database is not a pass).
-      - name: Refresh scanner DBs (trivy + grype)
-        run: |
-          set -euo pipefail
-          trivy image --download-db-only
-          jq -e '.Version' "$HOME/.cache/trivy/db/metadata.json" >/dev/null
-          grype db update
-          grype db version
-
-      - name: Scan -> publish (release contract, no signing credentials)
-        id: publish
-        env:
-          GATE_VULNS: 'true'
-          GH_TOKEN: ${{ github.token }}   # packages API, for a package not yet created
-        run: |
-          set -euo pipefail
-          ./scripts/cut-registry.sh publish
-
-      - name: Upload scan and SBOM records
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: registry-cut-build-${{ github.ref_name }}
-          path: dist/registry-cut/**
-          if-no-files-found: error
-          retention-days: 90
 
   attest:
     if: github.repository == 'MaliSec/temper'
@@ -192,47 +115,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Install cosign
-        run: |
-          TOOLS=cosign ./scripts/install-tools.sh
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-
-      - name: Download scan and SBOM records
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      - name: Sign and attest
+        uses: ./.github/actions/attest
         with:
-          name: registry-cut-build-${{ github.ref_name }}
-          path: dist/registry-cut
-
-      - name: Registry login
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_ACTOR: ${{ github.actor }}
-        run: |
-          set -euo pipefail
-          printf '%s' "$GH_TOKEN" | docker login "$REGISTRY" --username "$GH_ACTOR" --password-stdin >/dev/null
-
-      - name: Sign the image digest
-        env:
-          IMAGE: ${{ matrix.image.repository }}@${{ matrix.image.digest }}
-        run: cosign sign --yes "$IMAGE"
-
-      - name: Attest SLSA build provenance
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
-        with:
-          subject-name: ${{ matrix.image.repository }}
-          subject-digest: ${{ matrix.image.digest }}
-          push-to-registry: true
-
-      # Subjects are each index and each platform manifest; an SBOM
-      # describes one platform, so the index subjects carry none.
-      - name: Attest the SBOM
-        if: matrix.image.sbom != ''
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
-        with:
-          subject-name: ${{ matrix.image.repository }}
-          subject-digest: ${{ matrix.image.digest }}
-          sbom-path: dist/registry-cut/${{ github.ref_name }}/sbom/${{ matrix.image.sbom }}
-          push-to-registry: true
+          repository: ${{ matrix.image.repository }}
+          digest: ${{ matrix.image.digest }}
+          sbom: ${{ matrix.image.sbom }}
 
   evidence-suites:
     if: github.repository == 'MaliSec/temper'
@@ -332,61 +220,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Install cosign and crane
-        run: |
-          TOOLS="cosign crane" ./scripts/install-tools.sh
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-
-      - name: Download scan and SBOM records
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: registry-cut-build-${{ github.ref_name }}
-          path: dist/registry-cut
-
-      - name: Registry login
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_ACTOR: ${{ github.actor }}
-        run: |
-          set -euo pipefail
-          printf '%s' "$GH_TOKEN" | docker login "$REGISTRY" --username "$GH_ACTOR" --password-stdin >/dev/null
-
-      - name: Verify every image, advance latest, write the manifest
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          ./scripts/cut-registry.sh finalize
-
-      - name: Sign the release manifest
-        run: |
-          set -euo pipefail
-          m="dist/registry-cut/${DATE}/temper-${DATE}.manifest.yaml"
-          cosign sign-blob --yes --bundle "${m}.sigstore.json" "$m"
-
       - name: Download the evidence bundle
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: evidence-bundle
           path: evidence
 
-      - name: Create the release with the manifest and evidence attached
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          m="dist/registry-cut/${DATE}/temper-${DATE}.manifest.yaml"
-          gh release create "$DATE" "$m" "${m}.sigstore.json" "dist/registry-cut/${DATE}/temper-${DATE}.scans.json" \
-            "dist/registry-cut/${DATE}/temper-${DATE}.vex.json" \
-            evidence/gofips-evidence-"${DATE}".tar.gz \
-            --title "Temper ${DATE}" \
-            --notes "Images and digests are listed in the attached manifest, every scanner finding in the scans file, and the VEX statements in the VEX file; the manifest records both files' sha256. The gofips evidence bundle is attested. See docs/verifying.md."
-
-      - name: Upload release records
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      - name: Verify, tag, and create the release with the manifest and evidence attached
+        uses: ./.github/actions/release
         with:
-          name: registry-cut-${{ github.ref_name }}
-          path: dist/registry-cut/**
-          if-no-files-found: error
-          retention-days: 90
+          assets: evidence/gofips-evidence-${{ github.ref_name }}.tar.gz
+          notes: The gofips evidence bundle is attested.

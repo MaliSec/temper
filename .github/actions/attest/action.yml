@@ -1,0 +1,71 @@
+---
+# Sign one subject of the release and attest its SLSA provenance and, for a
+# platform manifest, its SBOM. It runs no build steps. Run it in a job with
+# id-token: write, attestations: write, artifact-metadata: write and
+# packages: write, once per subject from the publish action's images
+# output. The signature names the calling workflow, so each project's
+# releases carry its own signer identity.
+name: Temper attest
+description: Sign a released image and attest its provenance and SBOM.
+
+inputs:
+  repository:
+    description: The subject's repository (from the publish action's images output)
+    required: true
+  digest:
+    description: The subject's digest
+    required: true
+  sbom:
+    description: The subject's SBOM file in the records, or empty for an index
+    default: ''
+  token:
+    description: Token for the registry
+    default: ${{ github.token }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install cosign
+      shell: bash
+      run: |
+        TOOLS=cosign "$GITHUB_ACTION_PATH/../../../scripts/install-tools.sh"
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+    - name: Download scan and SBOM records
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      with:
+        name: registry-cut-build-${{ github.ref_name }}
+        path: dist/registry-cut
+
+    - name: Registry login
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        GH_ACTOR: ${{ github.actor }}
+      run: |
+        set -euo pipefail
+        printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GH_ACTOR" --password-stdin >/dev/null
+
+    - name: Sign the image digest
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.repository }}@${{ inputs.digest }}
+      run: cosign sign --yes "$IMAGE"
+
+    - name: Attest SLSA build provenance
+      uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+      with:
+        subject-name: ${{ inputs.repository }}
+        subject-digest: ${{ inputs.digest }}
+        push-to-registry: true
+
+    # Subjects are each index and each platform manifest; an SBOM
+    # describes one platform, so the index subjects carry none.
+    - name: Attest the SBOM
+      if: inputs.sbom != ''
+      uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+      with:
+        subject-name: ${{ inputs.repository }}
+        subject-digest: ${{ inputs.digest }}
+        sbom-path: dist/registry-cut/${{ github.ref_name }}/sbom/${{ inputs.sbom }}
+        push-to-registry: true

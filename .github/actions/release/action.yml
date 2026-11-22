@@ -1,0 +1,86 @@
+---
+# The release job: verifies every image as a consumer would, adds the date
+# and line tags, moves latest if this is the newest release
+# (scripts/cut-registry.sh finalize), signs the manifest, and creates the
+# GitHub release with the manifest, scans and VEX files and any further
+# assets. Run it in a job with contents: write, packages: write and
+# id-token: write, after the attest jobs.
+name: Temper release
+description: Verify, tag and record a release, and create its GitHub release.
+
+inputs:
+  assets:
+    description: Further files to attach, one path per line
+    default: ''
+  notes:
+    description: Text added to the release notes
+    default: ''
+  token:
+    description: Token for the registry and the releases API
+    default: ${{ github.token }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install cosign and crane
+      shell: bash
+      run: |
+        TOOLS="cosign crane" "$GITHUB_ACTION_PATH/../../../scripts/install-tools.sh"
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+    - name: Download scan and SBOM records
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      with:
+        name: registry-cut-build-${{ github.ref_name }}
+        path: dist/registry-cut
+
+    - name: Registry login
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        GH_ACTOR: ${{ github.actor }}
+      run: |
+        set -euo pipefail
+        printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GH_ACTOR" --password-stdin >/dev/null
+
+    - name: Verify every image, advance latest, write the manifest
+      shell: bash
+      env:
+        DATE: ${{ github.ref_name }}
+        GH_TOKEN: ${{ inputs.token }}
+      run: |
+        export TEMPER_PROJECT_DIR="$GITHUB_WORKSPACE"
+        "$GITHUB_ACTION_PATH/../../../scripts/cut-registry.sh" finalize
+
+    - name: Sign the manifest and create the release
+      shell: bash
+      env:
+        DATE: ${{ github.ref_name }}
+        ASSETS: ${{ inputs.assets }}
+        NOTES: ${{ inputs.notes }}
+        GH_TOKEN: ${{ inputs.token }}
+      run: |
+        set -euo pipefail
+        export TEMPER_PROJECT_DIR="$GITHUB_WORKSPACE"
+        . "$GITHUB_ACTION_PATH/../../../scripts/project.sh"
+        d="dist/registry-cut/${DATE}"
+        m="$d/${PROJECT_NAME}-${DATE}.manifest.yaml"
+        cosign sign-blob --yes --bundle "${m}.sigstore.json" "$m"
+        files=("$m" "${m}.sigstore.json" "$d/${PROJECT_NAME}-${DATE}.scans.json" "$d/${PROJECT_NAME}-${DATE}.vex.json")
+        while IFS= read -r f; do
+          [ -z "$f" ] || { [ -f "$f" ] || { echo "release asset $f missing" >&2; exit 1; }; files+=("$f"); }
+        done <<<"$ASSETS"
+        notes="Images and digests are listed in the attached manifest, every scanner finding in the scans file,"
+        notes="$notes and the VEX statements in the VEX file; the manifest records both files' sha256."
+        [ -z "$NOTES" ] || notes="$notes $NOTES"
+        gh release create "$DATE" "${files[@]}" --title "${PROJECT_TITLE} ${DATE}" \
+          --notes "$notes See docs/verifying.md."
+
+    - name: Upload release records
+      if: always()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: registry-cut-${{ github.ref_name }}
+        path: dist/registry-cut/**
+        if-no-files-found: error
+        retention-days: 90

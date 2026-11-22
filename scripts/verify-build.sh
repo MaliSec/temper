@@ -5,7 +5,7 @@
 # manifest. Needs only public material. Any failure exits 1.
 #
 # Usage:
-#   ./scripts/verify-build.sh <registry/org/name@sha256:digest | name> [--date TAG] [--manifest FILE]
+#   ./scripts/verify-build.sh <registry/path/name@sha256:digest | name> [--date TAG] [--manifest FILE]
 #
 # TAG is an immutable release tag: the date (YYYY.MM.DD or YYYY.MM.DD.N), or
 # <line>-<date> for an image with a version line (24-2026.11.19). Floating
@@ -13,22 +13,24 @@
 #
 # Examples:
 #   ./scripts/verify-build.sh ghcr.io/malisec/temper/static@sha256:abc...
-#   REGISTRY=ghcr.io IMAGE_ORG=malisec ./scripts/verify-build.sh temper/static --date 2026.11.19 \
-#     --manifest temper-2026.11.19.manifest.yaml
+#   ./scripts/verify-build.sh static --date 2026.11.19 --manifest temper-2026.11.19.manifest.yaml
 #
 # Keyless releases (default) need cosign, crane, jq and gh; key-mode cuts
 # (COSIGN_KEY) need cosign, crane and jq, and carry no SLSA provenance.
 # Env:
-#   CERT_IDENTITY_REGEXP  expected signer (default: temper-release-build.yml at a date tag)
+#   IMAGE_REPO            where a bare name is looked up (default: images in project.env)
+#   CERT_IDENTITY_REGEXP  expected signer (default: the project's release workflow at a date tag)
 #   CERT_OIDC_ISSUER      default: GitHub Actions' token issuer
-#   SOURCE_REPO           repository the attestations must come from (owner/repo)
+#   SOURCE_REPO           repository the signatures and attestations must come from
+#                         (default: repo in project.env)
 #   COSIGN_KEY            cosign public key, for images cut in key mode
 #   TEMPER_REV            commit the provenance must bind (default: HEAD)
 #   TEMPER_MANIFEST       release manifest, same as --manifest
 set -euo pipefail
-cd "$(dirname "$0")/.."
+CALLER_DIR=$PWD   # a relative --manifest is read from here
+. "$(dirname "$0")/project.sh"
 
-REF=${1:?usage: verify-build.sh <registry/org/name@digest | name> [--date TAG] [--manifest FILE]}
+REF=${1:?usage: verify-build.sh <registry/path/name@digest | name> [--date TAG] [--manifest FILE]}
 shift
 DATE_ARG=""
 MANIFEST_ARG="${TEMPER_MANIFEST:-}"
@@ -39,10 +41,11 @@ while [ $# -gt 0 ]; do
     *) echo "unknown argument: $1" >&2; exit 1 ;;
   esac
 done
+[ -z "$MANIFEST_ARG" ] || MANIFEST_ARG=$(cd "$CALLER_DIR" && realpath -m -- "$MANIFEST_ARG")
 IDENTITY_SET=${CERT_IDENTITY_REGEXP:+1}
-CERT_IDENTITY_REGEXP=${CERT_IDENTITY_REGEXP:-'^https://github\.com/MaliSec/temper/\.github/workflows/temper-release-build\.yml@refs/tags/[0-9]{4}\.[0-9]{2}\.[0-9]{2}(\.[1-9][0-9]*)?$'}
+CERT_IDENTITY_REGEXP=${CERT_IDENTITY_REGEXP:-"${SIGNER_RE}@refs/tags/[0-9]{4}\\.[0-9]{2}\\.[0-9]{2}(\\.[1-9][0-9]*)?\$"}
 CERT_OIDC_ISSUER=${CERT_OIDC_ISSUER:-https://token.actions.githubusercontent.com}
-SOURCE_REPO=${SOURCE_REPO:-MaliSec/temper}
+SOURCE_REPO=${SOURCE_REPO:-$PROJECT_REPO}
 # actions/attest records SPDX 2.3 SBOMs (syft's spdx-json) under this type.
 SBOM_PREDICATE=${SBOM_PREDICATE:-https://spdx.dev/Document/v2.3}
 command -v cosign >/dev/null 2>&1 || { echo "cosign not found — run: make install-tools" >&2; exit 1; }
@@ -55,8 +58,8 @@ if [ -n "$DATE_ARG" ]; then
   [[ "$DATE_ARG" =~ ^([0-9]+(\.[0-9]+)?-)?[0-9]{4}\.[0-9]{2}\.[0-9]{2}(\.[1-9][0-9]*)?$ ]] \
     || fail "--date $DATE_ARG is not a release tag (YYYY.MM.DD[.N] or <line>-YYYY.MM.DD[.N])"
 fi
-# A bare name (flat <name> or nested temper/<name>) is composed under
-# $REGISTRY/$IMAGE_ORG; a reference whose first component is a registry
+# A bare name is composed under $IMAGE_REPO (default: images in
+# project.env); a reference whose first component is a registry
 # host (a dot, a port, or localhost) is used as given. A tag is resolved to
 # a digest.
 if [[ "$REF" != *@* ]]; then
@@ -64,9 +67,7 @@ if [[ "$REF" != *@* ]]; then
   if [[ "$REF" == */* && ( "$host" == *.* || "$host" == *:* || "$host" == localhost ) ]]; then
     :
   else
-    REGISTRY=${REGISTRY:?REGISTRY env var required when verifying a bare image name}
-    IMAGE_ORG=${IMAGE_ORG:?IMAGE_ORG env var required when verifying a bare image name}
-    REF="${REGISTRY}/${IMAGE_ORG}/${REF}"
+    REF="${IMAGE_REPO:-$PROJECT_IMAGES}/${REF}"
   fi
 fi
 if [[ "$REF" != *@sha256:* ]]; then
@@ -80,9 +81,14 @@ fi
 # any release: a tag moved to an older, validly signed digest then fails.
 if [ -n "$DATE_ARG" ] && [ -z "$IDENTITY_SET" ]; then
   rel="${DATE_ARG##*-}"
-  CERT_IDENTITY_REGEXP="^https://github\.com/MaliSec/temper/\.github/workflows/temper-release-build\.yml@refs/tags/${rel//./\\.}\$"
+  CERT_IDENTITY_REGEXP="${SIGNER_RE}@refs/tags/${rel//./\\.}\$"
 fi
 echo "==> verifying $REF"
+if [ -n "${COSIGN_KEY:-}" ]; then
+  echo "    signer: the key $COSIGN_KEY"
+else
+  echo "    signer: $CERT_IDENTITY_REGEXP, from $SOURCE_REPO"
+fi
 rev="${TEMPER_REV:-$(git rev-parse --verify -q HEAD || true)}"
 
 # verify_ref <repo@digest> <label> <want_sbom 0|1>: signature and provenance,

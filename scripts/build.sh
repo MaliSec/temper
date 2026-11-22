@@ -21,7 +21,7 @@
 # Nothing is published; policy checks and publishing are in check-policy.sh
 # and cut-registry.sh.
 set -euo pipefail
-cd "$(dirname "$0")/.."
+. "$(dirname "$0")/project.sh"
 
 : "${ARCHS:=x86_64,aarch64}"
 : "${OUT_DIR:=dist}"
@@ -176,7 +176,7 @@ build_images() {
   mkdir -p "$OUT_DIR"
   local built=0
   # GHCR links a package to the repository named here.
-  SOURCE_ANNOTATION="org.opencontainers.image.source:https://github.com/MaliSec/temper"
+  SOURCE_ANNOTATION="org.opencontainers.image.source:https://github.com/${PROJECT_REPO}"
   for cfg in images/*/apko.yaml; do
     name=$(basename "$(dirname "$cfg")")
     case "$name" in $IMAGE_FILTER) ;; *) continue ;; esac

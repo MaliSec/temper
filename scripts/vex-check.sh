@@ -22,9 +22,13 @@
 # Usage: scripts/vex-check.sh [vex-dir] [images-dir]
 set -euo pipefail
 
-VEX_DIR="${1:-vex}"
-IMAGES_DIR="${2:-images}"
-REGISTRY_REPO="ghcr.io/malisec/temper"
+# Paths given are relative to the current directory; the defaults are the
+# project's.
+VEX_DIR=${1:+$(realpath -m "$1")}
+IMAGES_DIR=${2:+$(realpath -m "$2")}
+. "$(dirname "$0")/project.sh"
+VEX_DIR=${VEX_DIR:-vex} IMAGES_DIR=${IMAGES_DIR:-images}
+REGISTRY_REPO=$PROJECT_IMAGES
 fails=0 stale=0
 fail() { echo "vex: $*" >&2; fails=$((fails + 1)); }
 

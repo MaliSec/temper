@@ -15,7 +15,7 @@
 #   ./scripts/check-policy.sh static          # single image (glob)
 #   SKIP_UID_CHECK=1 ./scripts/check-policy.sh  # skip apko-config uid cross-check
 set -euo pipefail
-cd "$(dirname "$0")/.."
+. "$(dirname "$0")/project.sh"
 
 : "${OUT_DIR:=dist}"
 : "${SKIP_UID_CHECK:=0}"

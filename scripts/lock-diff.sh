@@ -7,12 +7,13 @@
 #   ./scripts/lock-diff.sh             # compare against HEAD
 #   BASE=<dir> ./scripts/lock-diff.sh  # compare against lockfiles in another tree
 set -euo pipefail
-cd "$(dirname "$0")/.."
+[ -z "${BASE:-}" ] || BASE=$(realpath -m "$BASE")
+. "$(dirname "$0")/project.sh"
 q='[.contents.packages[] | "\(.architecture) \(.name) \(.version)"] | sort | .[]'
 
 old_lock() {
   if [ -n "${BASE:-}" ]; then cat "$BASE/$1" 2>/dev/null || echo '{}'
-  else git show "HEAD:$1" 2>/dev/null || echo '{}'; fi
+  else git show "HEAD:./$1" 2>/dev/null || echo '{}'; fi
 }
 
 rows=""

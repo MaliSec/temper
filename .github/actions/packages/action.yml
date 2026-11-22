@@ -1,0 +1,41 @@
+---
+# Build the project's packages (packages/*/melange.yaml) for one
+# architecture and upload them as <artifact-prefix>-packages-<arch>. The
+# signing key stays on this runner; publish re-indexes both architectures'
+# packages with its own key.
+name: Temper packages
+description: Build the project's melange packages for one architecture.
+
+inputs:
+  arch:
+    description: x86_64 or aarch64 (the runner's own architecture)
+    required: true
+  artifact-prefix:
+    description: Prefix of the uploaded artifact's name
+    default: release
+
+runs:
+  using: composite
+  steps:
+    - name: Install apko and melange
+      shell: bash
+      run: |
+        TOOLS="apko melange" "$GITHUB_ACTION_PATH/../../../scripts/install-tools.sh"
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+    - name: Build packages
+      shell: bash
+      env:
+        MELANGE_RUNNER: docker
+        ARCH: ${{ inputs.arch }}
+      run: |
+        export TEMPER_PROJECT_DIR="$GITHUB_WORKSPACE"
+        "$GITHUB_ACTION_PATH/../../../scripts/build.sh" --packages --arch "$ARCH"
+
+    - name: Upload packages
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: ${{ inputs.artifact-prefix }}-packages-${{ inputs.arch }}
+        path: packages/${{ inputs.arch }}/*.apk
+        if-no-files-found: error
+        retention-days: 7

@@ -1,0 +1,104 @@
+---
+# The release's build job: builds every image for both architectures from
+# the committed lockfiles, runs the policy check and the vulnerability gate,
+# and pushes each image by digest (scripts/cut-registry.sh publish). Run it
+# in a job with packages: write and no id-token permission, after a
+# checkout with fetch-depth: 0, on a date tag.
+name: Temper publish
+description: Build, policy-check, scan and push the project's images for a release.
+
+inputs:
+  artifact-prefix:
+    description: Prefix of the packages artifacts (from the packages action)
+    default: release
+  token:
+    description: Token for the registry and the packages API
+    default: ${{ github.token }}
+
+outputs:
+  images:
+    description: The signing subjects, as JSON (scripts/cut-registry.sh)
+    value: ${{ steps.publish.outputs.images }}
+
+runs:
+  using: composite
+  steps:
+    # The signing identity accepts any date tag, so a release must come
+    # from a commit on main.
+    - name: Require the tagged commit on main
+      shell: bash
+      run: |
+        set -euo pipefail
+        git fetch --no-tags origin main
+        git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD \
+          || { echo "::error::${GITHUB_REF_NAME} is not on main; releases are cut only from main" >&2; exit 1; }
+
+    - name: Install pinned toolchain
+      shell: bash
+      run: |
+        TOOLS="apko melange crane grype syft trivy" "$GITHUB_ACTION_PATH/../../../scripts/install-tools.sh"
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+        command -v jq >/dev/null || { echo "jq not available on this runner image" >&2; exit 1; }
+
+    - name: Download packages (both architectures)
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      with:
+        pattern: ${{ inputs.artifact-prefix }}-packages-*
+        path: pkg-artifacts
+
+    # apko assembles the arm64 image without running it.
+    - name: Build images from the committed lockfiles
+      shell: bash
+      env:
+        PREFIX: ${{ inputs.artifact-prefix }}
+      run: |
+        set -euo pipefail
+        export TEMPER_PROJECT_DIR="$GITHUB_WORKSPACE"
+        for a in x86_64 aarch64; do
+          mkdir -p "packages/$a"
+          cp "pkg-artifacts/$PREFIX-packages-$a/"*.apk "packages/$a/"
+        done
+        "$GITHUB_ACTION_PATH/../../../scripts/build.sh" --index
+        "$GITHUB_ACTION_PATH/../../../scripts/build.sh" --images --arch x86_64,aarch64
+
+    # The token goes to docker login over stdin only, never an argv flag.
+    - name: Registry login
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        GH_ACTOR: ${{ github.actor }}
+      run: |
+        set -euo pipefail
+        printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GH_ACTOR" --password-stdin >/dev/null
+
+    # --download-db-only never scans: it refreshes the cache the cut reads
+    # with --skip-db-update. A failed download fails the release before
+    # any scan runs (scanning against a stale database is not a pass).
+    - name: Refresh scanner DBs (trivy + grype)
+      shell: bash
+      run: |
+        set -euo pipefail
+        c="$GITHUB_ACTION_PATH/../../../scripts/scanners.yaml"
+        trivy image --download-db-only --config "$c"
+        jq -e '.Version' "$HOME/.cache/trivy/db/metadata.json" >/dev/null
+        grype db update -c "$c"
+        grype db status -c "$c"
+
+    - name: Scan -> publish (release contract, no signing credentials)
+      id: publish
+      shell: bash
+      env:
+        DATE: ${{ github.ref_name }}
+        GATE_VULNS: 'true'
+        GH_TOKEN: ${{ inputs.token }}   # packages API, for a package not yet created
+      run: |
+        export TEMPER_PROJECT_DIR="$GITHUB_WORKSPACE"
+        "$GITHUB_ACTION_PATH/../../../scripts/cut-registry.sh" publish
+
+    - name: Upload scan and SBOM records
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: registry-cut-build-${{ github.ref_name }}
+        path: dist/registry-cut/**
+        if-no-files-found: error
+        retention-days: 90

@@ -20,10 +20,10 @@ trap 'rm -rf "$TMP"' EXIT
 
 echo "== gate: both scanners run, machine-readable records, union criticals =="
 CR=scripts/cut-registry.sh
-grep -q '"\$TRIVY" image --insecure --platform "linux/\$arch"' "$CR" \
+grep -q '"\$TRIVY" image --config "\$SCANNER_CONFIG" --ignorefile /dev/null --insecure --platform "linux/\$arch"' "$CR" \
   && ok "cut scans every platform with trivy (staged index, --platform)" \
   || fail "cut does not invoke trivy per platform"
-grep -q '"\$GRYPE" "registry:\$staged" --platform "linux/\$arch" -o json' "$CR" \
+grep -q '"\$GRYPE" "registry:\$staged" -c "\$SCANNER_CONFIG" --platform "linux/\$arch" -o json' "$CR" \
   && ok "cut scans every platform with grype" \
   || fail "grype scan missing from the cut"
 grep -q 'base="\$CUT_DIR/scan/\${name}\.\${arch}"' "$CR" && grep -q '"\$base.trivy.json"' "$CR" \
@@ -48,7 +48,7 @@ grep -q 'skip-db-update' "$CR" \
   && ok "cut pins the trivy DB to the refreshed runner cache (no live network mid-release)" \
   || fail "trivy DB handling not pinned"
 
-trivy_line=$(grep -n '"\$TRIVY" image --insecure' "$CR" | head -1 | cut -d: -f1)
+trivy_line=$(grep -n '"\$TRIVY" image ' "$CR" | head -1 | cut -d: -f1)
 grype_line=$(grep -n '"\$GRYPE" "registry:' "$CR" | head -1 | cut -d: -f1)
 gate_line=$(grep -n 'GATE: \$name has' "$CR" | head -1 | cut -d: -f1)
 if [ -n "$trivy_line" ] && [ -n "$grype_line" ] && [ -n "$gate_line" ] \
@@ -99,14 +99,14 @@ WF=.github/workflows/temper-build.yml
 grep -q 'scripts/install-tools.sh' "$WF" \
   && ok "workflow installs the toolchain (trivy included)" \
   || fail "workflow does not install the toolchain"
-RWF=.github/workflows/temper-release-build.yml
+RWF=.github/actions/publish/action.yml
 if [ ! -f "$RWF" ]; then
   fail "$RWF missing: release-job checks not run"
 else
 grep -q -- '--download-db-only' "$RWF" \
   && ok "workflow refreshes the trivy DB before the release job" \
   || fail "workflow does not refresh the trivy DB"
-grep -q './scripts/cut-registry.sh' "$RWF" \
+grep -q 'scripts/cut-registry.sh" publish' "$RWF" \
   && ok "workflow runs the cut (which gates on trivy+grype)" \
   || fail "workflow does not run the cut"
 grep -q 'scan/\${name}\.trivy\.json\|dist/registry-cut/\*\*' "$RWF" \
