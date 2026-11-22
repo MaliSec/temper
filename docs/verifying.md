@@ -88,8 +88,7 @@ against the release manifest you downloaded (`--date` takes the date, or
 `24` are refused):
 
 ```sh
-REGISTRY=ghcr.io IMAGE_ORG=malisec ./scripts/verify-build.sh temper/<name> \
-  --date 2026.11.19 --manifest temper-2026.11.19.manifest.yaml
+./scripts/verify-build.sh <name> --date 2026.11.19 --manifest temper-2026.11.19.manifest.yaml
 ```
 
 Run it from a checkout of the release tag, so the provenance is checked

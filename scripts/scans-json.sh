@@ -17,12 +17,14 @@
 set -euo pipefail
 
 usage="usage: scans-json.sh <records.json> <scan-dir> <release> [<vex.json>]"
-IMAGES_JSON="${1:?$usage}"
-SCAN_DIR="${2:?$usage}"
+IMAGES_JSON=$(realpath -m "${1:?$usage}")
+SCAN_DIR=$(realpath -m "${2:?$usage}")
 RELEASE="${3:?$usage}"
-VEX="${4:-}"
-IMAGES_DIR="${IMAGES_DIR:-images}"
-REGISTRY_REPO="ghcr.io/malisec/temper"
+VEX="${4:+$(realpath -m "$4")}"
+IMAGES_DIR=${IMAGES_DIR:+$(realpath -m "$IMAGES_DIR")}
+. "$(dirname "$0")/project.sh"
+IMAGES_DIR=${IMAGES_DIR:-images}
+REGISTRY_REPO=$PROJECT_IMAGES
 [ -f "$IMAGES_JSON" ] || { echo "scans-json: $IMAGES_JSON missing" >&2; exit 1; }
 vex_doc='{"statements": []}'
 if [ -n "$VEX" ]; then

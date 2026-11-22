@@ -22,9 +22,9 @@
 #
 # Usage: scripts/vex-carry.sh
 set -euo pipefail
-cd "$(dirname "$0")/.."
+. "$(dirname "$0")/project.sh"
 
-REGISTRY_REPO="ghcr.io/malisec/temper"
+REGISTRY_REPO=$PROJECT_IMAGES
 CPYTHON="https://github.com/python/cpython"
 WOLFI="wolfi-dev/os"
 work=$(mktemp -d)

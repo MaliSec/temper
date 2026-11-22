@@ -8,7 +8,7 @@
 #
 # Usage: ./scripts/image-line.sh <image name>
 set -euo pipefail
-cd "$(dirname "$0")/.."
+. "$(dirname "$0")/project.sh"
 
 name=${1:?usage: image-line.sh <image name>}
 name=${name%-debug}

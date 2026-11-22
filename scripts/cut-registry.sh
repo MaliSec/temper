@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# cut-registry.sh: publish a dated release of the Temper images.
+# cut-registry.sh: publish a dated release of the project's images.
 #
 # Release workflow (keyless, SLSA Build Level 3; see temper-release-build.yml):
 #   publish   build job, no signing credentials: policy check, Trivy + Grype
@@ -17,12 +17,12 @@
 # Key-mode cuts carry no SLSA provenance.
 #
 # Usage (credentials come from the environment; see docs/verifying.md):
-#   REGISTRY=ghcr.io IMAGE_ORG=malisec DATE=2026.11.19 ./scripts/cut-registry.sh publish
-#   REGISTRY=ghcr.io IMAGE_ORG=malisec DATE=2026.11.19 ./scripts/cut-registry.sh finalize
-#   COSIGN_PRIVATE_KEY=cosign.key REGISTRY=... IMAGE_ORG=... DATE=... ./scripts/cut-registry.sh
+#   DATE=2026.11.19 ./scripts/cut-registry.sh publish
+#   DATE=2026.11.19 ./scripts/cut-registry.sh finalize
+#   COSIGN_PRIVATE_KEY=cosign.key IMAGE_REPO=... DATE=... ./scripts/cut-registry.sh
 # Env:
-#   REGISTRY              required: registry host (no scheme)
-#   IMAGE_ORG             required: registry organisation / namespace
+#   IMAGE_REPO            images publish as $IMAGE_REPO/<name> (default: images
+#                         in project.env); a key-mode fork sets its own
 #   DATE                  required: immutable date tag, today or yesterday (UTC): YYYY.MM.DD, or
 #                         YYYY.MM.DD.N for a further release the same day
 #   PARTIAL_CUT=1         key mode only: cut a subset of the images (testing)
@@ -33,29 +33,23 @@
 #   CERT_IDENTITY_REGEXP, CERT_OIDC_ISSUER
 #                         finalize: passed through to verify-build.sh
 set -euo pipefail
-cd "$(dirname "$0")/.."
+. "$(dirname "$0")/project.sh"
 
 PHASE=${1:-}
 # scan: the release's policy check and per-platform scans on local tars,
 # with nothing published (make scan).
 if [ "$PHASE" = scan ]; then
-  REGISTRY=${REGISTRY:-local}; IMAGE_ORG=${IMAGE_ORG:-local}; DATE=${DATE:-$(date -u +%Y.%m.%d)}
+  IMAGE_REPO=${IMAGE_REPO:-local/local}; DATE=${DATE:-$(date -u +%Y.%m.%d)}
 fi
-REGISTRY=${REGISTRY:?REGISTRY required}
-IMAGE_ORG=${IMAGE_ORG:?IMAGE_ORG required (registry organisation / namespace)}
-# Default layout is <org>/temper/<name>; TEMPER_REPO_LAYOUT=flat gives <org>/<name>.
-TEMPER_REPO_LAYOUT=${TEMPER_REPO_LAYOUT:-nested}
-if [ "$TEMPER_REPO_LAYOUT" = "flat" ]; then
-  IMAGE_REPO="${IMAGE_ORG}"
-else
-  IMAGE_REPO="${IMAGE_ORG}/temper"
-fi
+IMAGE_REPO=${IMAGE_REPO:-$PROJECT_IMAGES}
+[[ "$IMAGE_REPO" =~ $IMAGE_REPO_RE ]] || { echo "IMAGE_REPO '$IMAGE_REPO' is not <registry>/<path>" >&2; exit 1; }
+REGISTRY=${IMAGE_REPO%%/*}
 DATE=${DATE:?DATE required (e.g. 2026.11.19)}
 [[ "$DATE" =~ ^[0-9]{4}\.[0-9]{2}\.[0-9]{2}(\.[1-9][0-9]*)?$ ]] \
   || { echo "DATE must be YYYY.MM.DD or YYYY.MM.DD.N, got: $DATE" >&2; exit 1; }
 # Signed by this release's run: a digest signed by an earlier release does
 # not pass for this one.
-CERT_IDENTITY_REGEXP=${CERT_IDENTITY_REGEXP:-"^https://github\.com/MaliSec/temper/\.github/workflows/temper-release-build\.yml@refs/tags/${DATE//./\\.}\$"}
+CERT_IDENTITY_REGEXP=${CERT_IDENTITY_REGEXP:-"${SIGNER_RE}@refs/tags/${DATE//./\\.}\$"}
 CERT_OIDC_ISSUER=${CERT_OIDC_ISSUER:-https://token.actions.githubusercontent.com}
 OUT_DIR=${OUT_DIR:-dist}
 TAR_DIR=${TAR_DIR:-${OUT_DIR}}
@@ -63,6 +57,7 @@ COSIGN=${COSIGN:-cosign}
 SYFT=${SYFT:-syft}
 GRYPE=${GRYPE:-grype}
 TRIVY=${TRIVY:-trivy}
+SCANNER_CONFIG="$TEMPER_HOME/scripts/scanners.yaml"
 GATE_VULNS=${GATE_VULNS:-true}
 CUT_DIR="${OUT_DIR}/registry-cut/${DATE}"
 IMAGES_JSON="${CUT_DIR}/images.json"
@@ -116,7 +111,7 @@ scan_images() {
   mkdir -p "$CUT_DIR/sbom" "$CUT_DIR/scan"
 
   echo "==> stage 2: policy check"
-  ./scripts/check-policy.sh
+  "$TEMPER_HOME/scripts/check-policy.sh"
 
   # Both scanners write a full JSON record per image to $CUT_DIR/scan/. The
   # gate fails on criticals from either scanner and on known-exploited
@@ -142,7 +137,7 @@ scan_images() {
 
   DB_NOTE="grype DB status unavailable (results recorded, freshness unknown)"
   DB_AGE="unknown"
-  if db_status=$("$GRYPE" db status -o json 2>/dev/null) && [ "$(jq -r '.valid' <<<"$db_status")" = "true" ]; then
+  if db_status=$("$GRYPE" db status -c "$SCANNER_CONFIG" -o json 2>/dev/null) && [ "$(jq -r '.valid' <<<"$db_status")" = "true" ]; then
     DB_BUILT=$(jq -r '.built // "unknown"' <<<"$db_status")
     DB_VERSION=$(jq -r '.schemaVersion // "unknown"' <<<"$db_status")
     DB_AGE=$(( ( $(date -u +%s) - $(date -u -d "$DB_BUILT" +%s 2>/dev/null || echo 0) ) / 86400 ))
@@ -160,7 +155,7 @@ scan_images() {
   for tar in "$TAR_DIR"/*.tar; do
     name=$(basename "$tar" .tar)
     case "$name" in *-debug) continue ;; esac
-    ./scripts/tar-to-oci-layout.sh "$tar" "$CUT_DIR/layout/$name"
+    "$TEMPER_HOME/scripts/tar-to-oci-layout.sh" "$tar" "$CUT_DIR/layout/$name"
     crane push --index "$CUT_DIR/layout/$name" "$STAGE/$name:stage" >/dev/null 2>&1 \
       || { echo "staging push failed: $name" >&2; exit 1; }
     digest=$(crane digest "$STAGE/$name:stage")
@@ -172,14 +167,15 @@ scan_images() {
       base="$CUT_DIR/scan/${name}.${arch}"
       # --skip-db-update: use the cached DB recorded above instead of
       # depending on the network mid-release.
-      "$TRIVY" image --insecure --platform "linux/$arch" --skip-db-update --format json --scanners vuln \
+      "$TRIVY" image --config "$SCANNER_CONFIG" --ignorefile /dev/null --insecure --platform "linux/$arch" \
+        --skip-db-update --format json --scanners vuln \
         "$staged" > "$base.trivy.json" 2>"$base.trivy.stderr" \
         || { echo "trivy scan failed: $name/$arch — failing the cut (unscannable is not a pass)" >&2; tail -5 "$base.trivy.stderr" >&2; exit 1; }
       tsev() { jq "[.Results[]?.Vulnerabilities[]? | select((.Severity // \"UNKNOWN\") == \"$1\")] | length" "$base.trivy.json"; }
       tcrit=$(tsev CRITICAL)
       vulns_trivy="critical=${tcrit} high=$(tsev HIGH) medium=$(tsev MEDIUM) low=$(tsev LOW) unknown=$(tsev UNKNOWN)"
       echo "        trivy: ${vulns_trivy}"
-      GRYPE_REGISTRY_INSECURE_USE_HTTP=true "$GRYPE" "registry:$staged" --platform "linux/$arch" -o json \
+      GRYPE_REGISTRY_INSECURE_USE_HTTP=true "$GRYPE" "registry:$staged" -c "$SCANNER_CONFIG" --platform "linux/$arch" -o json \
         > "$base.grype.json" 2>/dev/null \
         || { echo "grype scan failed: $name/$arch — failing the cut (unscannable is not a pass)" >&2; exit 1; }
       gsev() { jq "[.matches[]? | select((.vulnerability.severity // \"Unknown\") == \"$1\")] | length" "$base.grype.json"; }
@@ -191,7 +187,7 @@ scan_images() {
       echo "        grype: ${vulns_grype}"
       crit_total=$(( crit_total + tcrit + crit ))
       kev_total=$(( kev_total + kev ))
-      SYFT_REGISTRY_INSECURE_USE_HTTP=true "$SYFT" "registry:$staged" --platform "linux/$arch" -o spdx-json \
+      SYFT_REGISTRY_INSECURE_USE_HTTP=true "$SYFT" "registry:$staged" -c "$SCANNER_CONFIG" --platform "linux/$arch" -o spdx-json \
         > "$CUT_DIR/sbom/${name}.${arch}.spdx.json" 2>/dev/null \
         || { echo "syft failed: $name/$arch" >&2; exit 1; }
       plats+=("$(jq -nc --arg arch "$arch" --arg digest "$pdigest" --arg g "$vulns_grype" --arg t "$vulns_trivy" \
@@ -214,12 +210,12 @@ scan_images() {
   # both files' sha256. Built here, so a malformed statement or a mismatch
   # stops the cut before anything is published. VEX does not change the
   # gate above, which runs on the scanners' own findings.
-  ./scripts/vex-check.sh vex images
-  ./scripts/vex-merge.sh vex "$DATE" > "$CUT_DIR/temper-${DATE}.vex.json"
+  "$TEMPER_HOME/scripts/vex-check.sh" vex images
+  "$TEMPER_HOME/scripts/vex-merge.sh" vex "$DATE" > "$CUT_DIR/${PROJECT_NAME}-${DATE}.vex.json"
   printf '%s\n' "${records[@]}" | jq -s --arg scan_db "$DB_NOTE" --arg scan_db_trivy "$TRIVY_DB_NOTE" \
     '{scan_db: $scan_db, scan_db_trivy: $scan_db_trivy, images: .}' > "$CUT_DIR/scan/records.json"
-  ./scripts/scans-json.sh "$CUT_DIR/scan/records.json" "$CUT_DIR/scan" "$DATE" "$CUT_DIR/temper-${DATE}.vex.json" \
-    > "$CUT_DIR/temper-${DATE}.scans.json"
+  "$TEMPER_HOME/scripts/scans-json.sh" "$CUT_DIR/scan/records.json" "$CUT_DIR/scan" "$DATE" "$CUT_DIR/${PROJECT_NAME}-${DATE}.vex.json" \
+    > "$CUT_DIR/${PROJECT_NAME}-${DATE}.scans.json"
 }
 
 publish() {
@@ -233,7 +229,7 @@ publish() {
   local lines=()
   for c in images/*/apko.yaml; do
     n=$(basename "$(dirname "$c")"); r=$(image_repo "$n")
-    l=$(./scripts/image-line.sh "$n") || { echo "images/$n: no valid version line" >&2; exit 1; }
+    l=$("$TEMPER_HOME/scripts/image-line.sh" "$n") || { echo "images/$n: no valid version line" >&2; exit 1; }
     if [ "$r" != "$n" ]; then
       [ -f "images/$r/apko.yaml" ] && [ ! -f "images/$r/repo" ] \
         || { echo "images/$n/repo names '$r', which is not a primary image directory" >&2; exit 1; }
@@ -266,20 +262,20 @@ publish() {
   for rec in "${records[@]}"; do
     name=$(jq -r .name <<<"$rec")
     repo=$(image_repo "$name")
-    [ "$repo" != "$name" ] || require_tag_absent "${REGISTRY}/${IMAGE_REPO}/${repo}:${DATE}"
-    line=$(./scripts/image-line.sh "$name")
-    [ -z "$line" ] || require_tag_absent "${REGISTRY}/${IMAGE_REPO}/${repo}:${line}-${DATE}"
+    [ "$repo" != "$name" ] || require_tag_absent "${IMAGE_REPO}/${repo}:${DATE}"
+    line=$("$TEMPER_HOME/scripts/image-line.sh" "$name")
+    [ -z "$line" ] || require_tag_absent "${IMAGE_REPO}/${repo}:${line}-${DATE}"
   done
   local out=()
   for rec in "${records[@]}"; do
     name=$(jq -r .name <<<"$rec")
     digest=$(jq -r .digest <<<"$rec")
-    ref="${REGISTRY}/${IMAGE_REPO}/$(image_repo "$name")"
+    ref="${IMAGE_REPO}/$(image_repo "$name")"
     echo "    $name → $ref@$digest"
     reg crane copy "$STAGE/$name@$digest" "${ref}@${digest}" \
       || { echo "crane copy failed: $name → ${ref}@${digest}" >&2; exit 1; }
     [ "$(crane digest "${ref}@${digest}")" = "$digest" ] || { echo "$name: published digest differs from the staged one" >&2; exit 1; }
-    line=$(./scripts/image-line.sh "$name")
+    line=$("$TEMPER_HOME/scripts/image-line.sh" "$name")
     primary=$([ "$(image_repo "$name")" = "$name" ] && echo true || echo false)
     out+=("$(jq -c --arg repo "$ref" --arg line "$line" --argjson primary "$primary" \
       '. + {repository: $repo, line: $line, primary: $primary}' <<<"$rec")")
@@ -351,9 +347,10 @@ require_tag_absent() {
   # GHCR answers DENIED for a package that does not exist yet (every
   # package on the first release); the packages API tells the two apart.
   if [ "$REGISTRY" = ghcr.io ] && grep -qE 'DENIED|UNAUTHORIZED' <<<"$out" && command -v gh >/dev/null; then
-    local pkg="${1#ghcr.io/"$IMAGE_ORG"/}"; pkg="${pkg%:*}"
-    if gh api "/orgs/${IMAGE_ORG}/packages/container/${pkg//\//%2F}" >/dev/null 2>&1; then :
-    elif gh api "/orgs/${IMAGE_ORG}/packages/container/${pkg//\//%2F}" 2>&1 | grep -q 'HTTP 404'; then
+    local path="${1#ghcr.io/}"; path="${path%:*}"
+    local org="${path%%/*}" pkg="${path#*/}"
+    if gh api "/orgs/${org}/packages/container/${pkg//\//%2F}" >/dev/null 2>&1; then :
+    elif gh api "/orgs/${org}/packages/container/${pkg//\//%2F}" 2>&1 | grep -q 'HTTP 404'; then
       return 0
     fi
   fi
@@ -403,8 +400,8 @@ finalize() {
   if [ "$SIGNING" = key ]; then export COSIGN_KEY="${CUT_DIR}/cosign.pub"; fi
   jq -c '.images[]' "$IMAGES_JSON" | while read -r img; do
     pinned="$(jq -r .repository <<<"$img")@$(jq -r .digest <<<"$img")"
-    ./scripts/verify-build.sh "$pinned" >/dev/null \
-      || { echo "verification failed: $pinned" >&2; ./scripts/verify-build.sh "$pinned" 2>&1 | tail -3 >&2; exit 1; }
+    "$TEMPER_HOME/scripts/verify-build.sh" "$pinned" >/dev/null \
+      || { echo "verification failed: $pinned" >&2; "$TEMPER_HOME/scripts/verify-build.sh" "$pinned" 2>&1 | tail -3 >&2; exit 1; }
     echo "    $(jq -r .name <<<"$img"): verified @ $(jq -r .digest <<<"$img")"
   done
 
@@ -425,7 +422,7 @@ finalize() {
   jq -e '[.images[] | select(.primary)] | length > 0' "$IMAGES_JSON" >/dev/null \
     || LATEST_NOTE="not advanced: no primary image in this release"
   while read -r repo; do
-    newest=$(crane ls "$repo" | ./scripts/newest-date-tag.sh)
+    newest=$(crane ls "$repo" | "$TEMPER_HOME/scripts/newest-date-tag.sh")
     if [ "$newest" != "$DATE" ]; then
       LATEST_NOTE="not advanced: ${repo##*/} has newer release ${newest}"
       break
@@ -444,7 +441,7 @@ finalize() {
   LINE_NOTES="{}"
   while read -r repo digest line; do
     [ -n "$line" ] || continue
-    newest=$(crane ls "$repo" | sed -n "s/^${line//./\\.}-//p" | ./scripts/newest-date-tag.sh)
+    newest=$(crane ls "$repo" | sed -n "s/^${line//./\\.}-//p" | "$TEMPER_HOME/scripts/newest-date-tag.sh")
     if [ "$newest" = "$DATE" ]; then
       reg crane tag "${repo}@${digest}" "$line" || { echo "crane tag failed: ${repo}@${digest} as $line" >&2; exit 1; }
       note="advanced to ${line}-${DATE}"
@@ -455,25 +452,24 @@ finalize() {
     LINE_NOTES=$(jq -c --arg r "$repo:$line" --arg n "$note" '. + {($r): $n}' <<<"$LINE_NOTES")
   done < <(jq -r '.images[] | "\(.repository) \(.digest) \(.line)"' "$IMAGES_JSON")
 
-  SCANS="${CUT_DIR}/temper-${DATE}.scans.json"
+  SCANS="${CUT_DIR}/${PROJECT_NAME}-${DATE}.scans.json"
   [ -s "$SCANS" ] || { echo "no $SCANS — the scan phase's records are missing" >&2; exit 1; }
   SCANS_SHA256=$(sha256sum "$SCANS" | cut -d' ' -f1)
-  VEX="${CUT_DIR}/temper-${DATE}.vex.json"
+  VEX="${CUT_DIR}/${PROJECT_NAME}-${DATE}.vex.json"
   [ -s "$VEX" ] || { echo "no $VEX — the scan phase's records are missing" >&2; exit 1; }
   VEX_SHA256=$(sha256sum "$VEX" | cut -d' ' -f1)
 
-  MANIFEST="${CUT_DIR}/temper-${DATE}.manifest.yaml"
+  MANIFEST="${CUT_DIR}/${PROJECT_NAME}-${DATE}.manifest.yaml"
   if [ "$SIGNING" = keyless ]; then
     attestations="SLSA v1 build provenance + SPDX SBOM (GitHub attestations, verified)"
   else
     attestations="SPDX SBOM (cosign, verified); no SLSA provenance in key mode"
   fi
   {
-    echo "# Temper release ${DATE} (scripts/cut-registry.sh)"
+    echo "# ${PROJECT_TITLE} release ${DATE} (scripts/cut-registry.sh)"
     echo "cut_at: \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\""
     echo "registry: \"${REGISTRY}\""
-    echo "org: \"${IMAGE_ORG}\""
-    echo "layout: \"${TEMPER_REPO_LAYOUT}\""
+    echo "image_repository: \"${IMAGE_REPO}\""
     echo "git_commit: \"${TEMPER_REV}\""
     echo "scan_db: \"$(jq -r .scan_db "$IMAGES_JSON")\""
     echo "scan_db_trivy: \"$(jq -r .scan_db_trivy "$IMAGES_JSON")\""
@@ -498,7 +494,7 @@ finalize() {
       ([.platforms[] | "\n      \(.arch): \"\(.digest)\""] | join(""))' "$IMAGES_JSON"
   } > "$MANIFEST"
   echo "---"
-  echo "release complete: $(jq '.images | length' "$IMAGES_JSON") images, release ${DATE} (${REGISTRY}/${IMAGE_REPO})"
+  echo "release complete: $(jq '.images | length' "$IMAGES_JSON") images, release ${DATE} (${IMAGE_REPO})"
   echo "manifest: $MANIFEST (sign it and attach it, with $(basename "$SCANS") and $(basename "$VEX"), to the release for ${DATE}; do not commit them)"
 }
 

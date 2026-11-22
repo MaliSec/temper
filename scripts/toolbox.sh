@@ -10,7 +10,8 @@
 #
 # The current directory is mounted at the same absolute path and runs as your
 # uid/gid, so outputs land in the repo as with a host install. Tool caches go
-# to ./.toolbox-cache/ (git-ignored).
+# to ./.toolbox-cache/ (git-ignored). TEMPER_PROJECT_DIR, when set, is
+# mounted and passed the same way.
 set -euo pipefail
 
 TOOLBOX_IMAGE="${TOOLBOX_IMAGE:-temper-toolbox:local}"
@@ -50,6 +51,13 @@ if [ -S /var/run/docker.sock ]; then
   )
 fi
 
+PROJECT_ARGS=()
+if [ -n "${TEMPER_PROJECT_DIR:-}" ]; then
+  p=$(realpath "$TEMPER_PROJECT_DIR")
+  PROJECT_ARGS=(-e TEMPER_PROJECT_DIR="$p")
+  [ "$p" = "$PWD" ] || PROJECT_ARGS+=(-v "$p":"$p")
+fi
+
 exec docker run --rm \
   "${USER_ARGS[@]}" \
   -v "$PWD":"$PWD" \
@@ -58,5 +66,6 @@ exec docker run --rm \
   -e XDG_CACHE_HOME=/cache \
   "${ENV_ARGS[@]}" \
   "${DOCKER_ARGS[@]}" \
+  "${PROJECT_ARGS[@]}" \
   -w "$PWD" \
   "$TOOLBOX_IMAGE" "$@"

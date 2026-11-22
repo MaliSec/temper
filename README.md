@@ -129,8 +129,10 @@ images/<name>/        apko image definitions and committed lockfiles
 packages/<name>/      melange recipes for packages built here
 providers/gofips/     the gofips OpenSSL provider and its audit pack
 scripts/              build, policy check, release cut and verify scripts
+.github/actions/      the release steps, also used by other repositories
+project.env           the project's name, repository, signer and image namespace
 policy/               security and hardening policy
-docs/                 verifying images, third-party software
+docs/                 verifying images, maintaining releases, third-party software
 tests/                local test suite
 ```
 

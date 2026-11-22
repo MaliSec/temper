@@ -13,7 +13,7 @@
 #   ./scripts/rollback-latest.sh <date-tag> [--dry-run]
 #
 # Env:
-#   GH_REPO               repository holding the releases (default: MaliSec/temper)
+#   GH_REPO               repository holding the releases (default: project.env's repo)
 #   MANIFEST              use this local manifest instead of downloading one;
 #                         its bundle must sit beside it as <manifest>.sigstore.json
 #   CERT_IDENTITY_REGEXP, CERT_OIDC_ISSUER
@@ -22,7 +22,8 @@
 # Needs: cosign, crane, jq, gh (unless MANIFEST is set), registry write access
 # (docker login or crane auth login) for the image repositories.
 set -euo pipefail
-cd "$(dirname "$0")/.."
+[ -z "${MANIFEST:-}" ] || MANIFEST=$(realpath -m -- "$MANIFEST")
+. "$(dirname "$0")/project.sh"
 
 TAG=${1:?usage: rollback-latest.sh <date-tag> [--dry-run]}
 DRY=0
@@ -32,11 +33,11 @@ case "$#:${2:-}" in
   *) echo "usage: rollback-latest.sh <date-tag> [--dry-run]" >&2; exit 1 ;;
 esac
 [[ "$TAG" =~ ^[0-9]{4}\.[0-9]{2}\.[0-9]{2}(\.[1-9][0-9]*)?$ ]] || { echo "not a date tag: $TAG" >&2; exit 1; }
-GH_REPO=${GH_REPO:-MaliSec/temper}
+GH_REPO=${GH_REPO:-$PROJECT_REPO}
 # The manifest and every image must be signed by the run for this tag, not
 # by any release: a replaced release asset cannot point the rollback at a
 # different release.
-CERT_IDENTITY_REGEXP=${CERT_IDENTITY_REGEXP:-"^https://github\\.com/MaliSec/temper/\\.github/workflows/temper-release-build\\.yml@refs/tags/${TAG//./\\.}\$"}
+CERT_IDENTITY_REGEXP=${CERT_IDENTITY_REGEXP:-"${SIGNER_RE}@refs/tags/${TAG//./\\.}\$"}
 CERT_OIDC_ISSUER=${CERT_OIDC_ISSUER:-https://token.actions.githubusercontent.com}
 export CERT_IDENTITY_REGEXP CERT_OIDC_ISSUER
 fail() { echo "ROLLBACK ABORTED: $*" >&2; exit 1; }
@@ -49,9 +50,9 @@ if [ -n "${MANIFEST:-}" ]; then
 else
   command -v gh >/dev/null || fail "gh required to download the manifest (or set MANIFEST)"
   gh release download "$TAG" --repo "$GH_REPO" --dir "$work" \
-    --pattern "temper-${TAG}.manifest.yaml" --pattern "temper-${TAG}.manifest.yaml.sigstore.json" \
+    --pattern "${PROJECT_NAME}-${TAG}.manifest.yaml" --pattern "${PROJECT_NAME}-${TAG}.manifest.yaml.sigstore.json" \
     || fail "cannot download the manifest for release $TAG from $GH_REPO"
-  m="$work/temper-${TAG}.manifest.yaml"
+  m="$work/${PROJECT_NAME}-${TAG}.manifest.yaml"
 fi
 [ -f "$m" ] && [ -f "$m.sigstore.json" ] || fail "manifest or its bundle missing: $m(.sigstore.json)"
 
@@ -79,8 +80,8 @@ rev=$(sed -n 's/^git_commit: "\(.*\)"$/\1/p' "$m")
 
 echo "==> verify every image of $TAG"
 while read -r pinned; do
-  TEMPER_REV="$rev" ./scripts/verify-build.sh "$pinned" --manifest "$m" >/dev/null 2>&1 \
-    || fail "$pinned does not verify (run: TEMPER_REV=$rev ./scripts/verify-build.sh $pinned --manifest $m)"
+  TEMPER_REV="$rev" "$TEMPER_HOME/scripts/verify-build.sh" "$pinned" --manifest "$m" >/dev/null 2>&1 \
+    || fail "$pinned does not verify (run: TEMPER_REV=$rev scripts/verify-build.sh $pinned --manifest $m)"
   echo "    OK  $pinned"
 done <<<"$pairs"
 
