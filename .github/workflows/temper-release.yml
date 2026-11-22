@@ -16,13 +16,15 @@ permissions:
   contents: read
 
 # One release at a time: two release jobs running together could each decide
-# they are newest and move latest and the line tags backwards. GitHub keeps
-# one run waiting; a third tag pushed meanwhile cancels the waiting run.
-# The cancelled run published nothing: re-run it the same UTC day, or push
-# a new .N tag (the release date must be today or yesterday).
+# they are newest and move latest and the line tags backwards. Further tags
+# wait in order (queue: max) instead of replacing each other. A run still
+# waiting after the day after its date fails the date check and publishes
+# nothing: tag today's UTC date instead (with .N if it already has a
+# release).
 concurrency:
   group: temper-release
   cancel-in-progress: false
+  queue: max
 
 jobs:
   release:
