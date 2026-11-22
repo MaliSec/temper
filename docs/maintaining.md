@@ -61,9 +61,18 @@ calling repository changes nothing.
   package belongs to whichever repository pushes it first. In a shared
   namespace, any repository in the organisation could take an image's
   name first.
-- `images/<name>/` for each image, at least one package in
-  `packages/<name>/melange.yaml`, and a `vex/` directory (a `.gitkeep` is
-  enough to start with).
+- `images/<name>/apko.yaml` for each image, with its committed lockfile
+  (`apko.lock.json`): the release builds from the lockfiles and resolves
+  nothing. Generate them from a Temper checkout, building the project's
+  packages first when an image uses them:
+
+  ```sh
+  TEMPER_PROJECT_DIR=../temper-apps ./scripts/build.sh --packages
+  TEMPER_PROJECT_DIR=../temper-apps ./scripts/build.sh --lock
+  ```
+
+- At least one package in `packages/<name>/melange.yaml`, and a `vex/`
+  directory (a `.gitkeep` is enough to start with).
 - The release workflow below, saved under the name in `release_workflow`.
 - A tag ruleset, like Temper's `tag-main`, that limits who can create,
   update or delete date tags, and a `main` ruleset that requires pull
@@ -180,4 +189,7 @@ TEMPER_PROJECT_DIR=../temper-apps ./scripts/verify-build.sh <name> \
   --date <tag> --manifest temper-apps-<tag>.manifest.yaml
 ```
 
-The script prints the signer and source repository it checks against.
+`<name>` is the image's repository: an older version line
+(`images/<dir>/repo` names the primary image) publishes there, tagged
+`<line>-<tag>`, so pass `--date <line>-<tag>`. The script prints the signer
+and source repository it checks against.
