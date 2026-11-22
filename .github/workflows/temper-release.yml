@@ -19,7 +19,8 @@ permissions:
 # they are newest and move latest and the line tags backwards. Further tags
 # wait in order (queue: max) instead of replacing each other. A run still
 # waiting after the day after its date fails the date check and publishes
-# nothing: push a new .N tag.
+# nothing: tag today's UTC date instead (with .N if it already has a
+# release).
 concurrency:
   group: temper-release
   cancel-in-progress: false
