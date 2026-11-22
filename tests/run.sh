@@ -198,6 +198,27 @@ grep -q -- '--cert-identity-regex "$CERT_IDENTITY_REGEXP"' scripts/verify-build.
   && ok "verify-build pins the attestation signer to a release tag (not the workflow at any ref)" \
   || fail "verify-build does not pin the attestation signer identity"
 
+# The workflow is public and reusable: called from another repository, it
+# would sign with Temper's identity. Every job refuses to run elsewhere,
+# and every keyless verification also pins the source repository.
+guard_bad=""
+for j in $(awk '/^jobs:$/{f=1; next} f && /^  [a-z-]+:$/{sub(/:$/,""); print $1}' "$RB"); do
+  job "$j" | grep -qx "    if: github.repository == 'MaliSec/temper'" || guard_bad="$guard_bad $j"
+done
+[ -z "$guard_bad" ] && ok "every release job runs only in MaliSec/temper" \
+  || fail "release jobs that would run when called from another repository:$guard_bad"
+repo_bad=""
+for f in scripts/*.sh docs/*.md README.md; do
+  # Each cosign verify command, joined across its continuation lines.
+  cmds=$(awk '/cosign verify/ && !/^ *#/ {c=$0; while (c ~ /\\$/ && (getline l) > 0) c = c " " l; print FILENAME": "c}' "$f")
+  bad=$(grep -E -- '--certificate-identity' <<<"$cmds" | grep -v -- '--certificate-github-workflow-repository' || true)
+  [ -z "$bad" ] || repo_bad="$repo_bad"$'\n'"$bad"
+done
+[ -z "$repo_bad" ] && ok "every keyless cosign verification pins the source repository" \
+  || fail "keyless verification without --certificate-github-workflow-repository:$repo_bad"
+grep -c -- '--certificate-github-workflow-repository' scripts/verify-build.sh scripts/rollback-latest.sh docs/verifying.md | grep -q ':0$' \
+  && fail "a verifier lost its source-repository check" || ok "verify-build, rollback-latest and the docs check the source repository"
+
 echo "== supply chain: install-tools checksum posture =="
 for var in APKO_SHA256_AMD64 APKO_SHA256_ARM64 MELANGE_SHA256_AMD64 MELANGE_SHA256_ARM64 COSIGN_SHA256_AMD64 \
            COSIGN_SHA256_ARM64 CRANE_SHA256_AMD64 CRANE_SHA256_ARM64 GRYPE_SHA256_AMD64 GRYPE_SHA256_ARM64 \

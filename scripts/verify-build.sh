@@ -108,7 +108,7 @@ verify_ref() {
     command -v gh >/dev/null 2>&1 || { echo "gh (GitHub CLI) required to verify attestations" >&2; exit 1; }
     how="release workflow identity"
     cosign verify --certificate-identity-regexp "$CERT_IDENTITY_REGEXP" --certificate-oidc-issuer "$CERT_OIDC_ISSUER" \
-      "$ref" >/dev/null 2>&1 \
+      --certificate-github-workflow-repository "$SOURCE_REPO" "$ref" >/dev/null 2>&1 \
       || fail "cosign signature does not verify against the $how"
     echo "    ${label}signature: OK ($how)"
 
@@ -160,7 +160,8 @@ if [ -n "$MANIFEST_ARG" ]; then
     cosign verify-blob --key "$COSIGN_KEY" --insecure-ignore-tlog --bundle "$MANIFEST_ARG.sigstore.json" "$MANIFEST_ARG" >/dev/null 2>&1
   else
     cosign verify-blob --bundle "$MANIFEST_ARG.sigstore.json" --certificate-identity-regexp "$CERT_IDENTITY_REGEXP" \
-      --certificate-oidc-issuer "$CERT_OIDC_ISSUER" "$MANIFEST_ARG" >/dev/null 2>&1
+      --certificate-oidc-issuer "$CERT_OIDC_ISSUER" --certificate-github-workflow-repository "$SOURCE_REPO" \
+      "$MANIFEST_ARG" >/dev/null 2>&1
   fi || fail "the manifest $MANIFEST_ARG is not signed by the release workflow"
   echo "    manifest signature: OK"
   if [ -n "$DATE_ARG" ]; then

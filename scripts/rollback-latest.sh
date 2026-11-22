@@ -60,7 +60,7 @@ if [ -n "${COSIGN_KEY:-}" ]; then
   cosign verify-blob --key "$COSIGN_KEY" --insecure-ignore-tlog --bundle "$m.sigstore.json" "$m" >/dev/null 2>&1
 else
   cosign verify-blob --bundle "$m.sigstore.json" --certificate-identity-regexp "$CERT_IDENTITY_REGEXP" \
-    --certificate-oidc-issuer "$CERT_OIDC_ISSUER" "$m" >/dev/null 2>&1
+    --certificate-oidc-issuer "$CERT_OIDC_ISSUER" --certificate-github-workflow-repository "$GH_REPO" "$m" >/dev/null 2>&1
 fi || fail "the manifest for $TAG is not signed by the release workflow"
 echo "    OK"
 
