@@ -20,10 +20,15 @@ work=$(mktemp -d)
 git status --porcelain=v1 -z --untracked-files=all --no-renames -- "$@" |
   while IFS= read -r -d '' entry; do
     path=${entry:3}
-    if [ -e "$path" ]; then
-      mode=100644
-      [ -x "$path" ] && mode=100755
-      base64 -w0 -- "$path" > "$work/content"
+    if [ -L "$path" ] || [ -e "$path" ]; then
+      if [ -L "$path" ]; then
+        mode=120000
+        printf '%s' "$(readlink -- "$path")" | base64 -w0 > "$work/content"
+      else
+        mode=100644
+        [ -x "$path" ] && mode=100755
+        base64 -w0 -- "$path" > "$work/content"
+      fi
       sha=$(jq -n --rawfile c "$work/content" '{content: $c, encoding: "base64"}' |
         gh api "repos/$repo/git/blobs" --input - --jq .sha)
       jq -nc --arg path "$path" --arg mode "$mode" --arg sha "$sha" \
