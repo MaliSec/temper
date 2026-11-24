@@ -102,8 +102,8 @@ for i in "${!recipes[@]}"; do
     "$envs.$first" > "$saved/new.$i"
 done
 
-trap - EXIT
 for i in "${!recipes[@]}"; do
   rewrite "${recipes[$i]}" "$saved/new.$i"
   echo "${recipes[$i]}: $(wc -l < "$saved/new.$i") packages pinned"
 done
+trap - EXIT
