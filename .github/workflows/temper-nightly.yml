@@ -65,6 +65,7 @@ jobs:
       changed: ${{ steps.diff.outputs.changed }}
     env:
       BRANCH: relock/automated
+      REPO: ${{ github.repository }}
     steps:
       - name: App token
         id: app
@@ -150,7 +151,10 @@ jobs:
             echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # A push with the App's token runs temper-build on the PR.
+      # The commit is made through GitHub's API so GitHub signs it as the App:
+      # main requires signed commits, and an unsigned commit on the PR blocks
+      # its merge. A branch update with the App's token runs temper-build on
+      # the PR.
       - name: Open or update the relock PR
         if: steps.diff.outputs.changed == 'true'
         env:
@@ -160,13 +164,11 @@ jobs:
           set -euo pipefail
           bot="${APP_SLUG}[bot]"
           botmail="$(gh api "users/${bot}" --jq .id)+${bot}@users.noreply.github.com"
-          git config user.name "$bot"
-          git config user.email "$botmail"
-          git checkout -B "$BRANCH"
-          git add images/ vex/
-          git commit -q -m "Relock images against Wolfi ($(date -u +%Y-%m-%d))" \
-            -m "Signed-off-by: $bot <$botmail>"
-          git push -q --force origin "$BRANCH"
+          message="$(printf 'Relock images against Wolfi (%s)\n\nSigned-off-by: %s <%s>\n' \
+            "$(date -u +%Y-%m-%d)" "$bot" "$botmail")"
+          sha=$(scripts/signed-commit.sh "$REPO" "$BRANCH" "$message" images/ vex/)
+          verified=$(gh api "repos/$REPO/commits/$sha" --jq .commit.verification.verified)
+          [ "$verified" = true ] || { echo "::error::the relock commit $sha is not signed"; exit 1; }
 
           {
             echo "Nightly relock: package versions Wolfi now resolves for the committed configs."
