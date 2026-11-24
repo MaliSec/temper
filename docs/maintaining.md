@@ -1,6 +1,7 @@
 # Maintaining Temper
 
-How to cut a release, move `latest` back, and release another repository's images.
+How to cut a release, move `latest` back, bump a package's build environment,
+and release another repository's images.
 
 ## Cutting a release
 
@@ -32,6 +33,26 @@ release workflow and verifies every image in it before moving anything; if
 a check fails, nothing moves. Leave the bad release's date tags in place,
 say in its release notes that it was rolled back, and ship the fix as a
 new release.
+
+## Bumping a package's build environment
+
+Each `packages/<name>/melange.yaml` pins its whole build environment: the
+packages it lists, and below the `pin-build-env.sh` marker, everything they
+pull in. melange records that environment in the package, and the
+lockfiles pin the package by checksum, so a floating version would fail
+every build against the lockfiles as soon as Wolfi updated it. The nightly
+relock does not change these pins.
+
+To bump, edit the versions above the marker if needed, then repin and
+relock:
+
+```sh
+./scripts/pin-build-env.sh   # unpins, builds the packages, pins what resolved
+./scripts/build.sh --lock
+```
+
+Wolfi keeps a version for about six months. Bump before then: once a pinned
+version is gone, the package no longer builds.
 
 ## Releasing another repository's images
 

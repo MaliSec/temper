@@ -720,6 +720,17 @@ grep -q 'scripts/vex-carry.sh' .github/workflows/temper-nightly.yml && grep -qF 
   && grep -q 'tests/vex-checks.sh' .github/workflows/temper-build.yml \
   && ok "the nightly relock carries VEX statements, and CI runs their checks" \
   || fail "the VEX carry or its checks are not wired into the nightly relock and CI"
+unpinned=""
+for r in packages/*/melange.yaml; do
+  grep -qxF '      # What the packages above pull in, pinned by scripts/pin-build-env.sh.' "$r" || unpinned="$unpinned $r"
+  unpinned="$unpinned$(awk -v r="$r" '/^[a-z]/ { top = $0 }
+    top == "environment:" && $0 == "    packages:" { f = 1; next }
+    f && /^      - / { if ($2 !~ /^[^=<>~]+=[^=<>~]+$/) printf " %s:%s", r, $2; next }
+    f && /^      #/ { next }
+    f { exit }' "$r")"
+done
+[ -z "$unpinned" ] && ok "every package's whole build environment is pinned" \
+  || fail "build environment not fully pinned (run scripts/pin-build-env.sh):$unpinned"
 # step <name>: one step of the nightly, up to the next.
 NW=.github/workflows/temper-nightly.yml
 step() { awk -v n="      - name: $1" '$0 == n {f=1; print; next} f && /^      - name: / {exit} f' "$NW"; }
