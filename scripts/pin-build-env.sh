@@ -61,15 +61,27 @@ hand_names() {
     f { exit }' "$1"
 }
 
+# pinned <melange.yaml>: the entries below the marker.
+pinned() {
+  awk -v marker="$MARKER" '$0 == marker { f = 1; next } f && /^      - / { sub(/^      - /, ""); print; next } f { exit }' "$1"
+}
+
 recipes=(packages/*/melange.yaml)
-empty=$(mktemp)
+empty=$(mktemp) saved=$(mktemp -d)
+# Until every recipe is repinned, a failure or interrupt puts the previous
+# pins back (only the block below the marker; edits above it stay).
+for i in "${!recipes[@]}"; do pinned "${recipes[$i]}" > "$saved/$i"; done
+restore() { for i in "${!recipes[@]}"; do rewrite "${recipes[$i]}" "$saved/$i"; done; }
+trap 'restore' EXIT
+trap 'exit 130' INT TERM
 if [ -z "$from" ]; then
   for r in "${recipes[@]}"; do rewrite "$r" "$empty"; done
   ARCHS="$ARCHS" ./scripts/build.sh --packages
   from=packages
 fi
 
-for r in "${recipes[@]}"; do
+for i in "${!recipes[@]}"; do
+  r=${recipes[$i]}
   name=$(awk '/^package:/{f=1} f && /^  name:/{print $2; exit}' "$r")
   ver=$(awk '/^package:/{f=1} f && /^  version:/{print $2; exit}' "$r")
   epoch=$(awk '/^package:/{f=1} f && /^  epoch:/{print $2; exit}' "$r")
@@ -87,7 +99,11 @@ for r in "${recipes[@]}"; do
     fi
   done
   awk -F= -v hand=" $(hand_names "$r" | paste -sd' ') " 'index(hand, " " $1 " ") == 0' \
-    "$envs.$first" > "$envs.pins"
-  rewrite "$r" "$envs.pins"
-  echo "$r: $(wc -l < "$envs.pins") packages pinned"
+    "$envs.$first" > "$saved/new.$i"
+done
+
+trap - EXIT
+for i in "${!recipes[@]}"; do
+  rewrite "${recipes[$i]}" "$saved/new.$i"
+  echo "${recipes[$i]}: $(wc -l < "$saved/new.$i") packages pinned"
 done
