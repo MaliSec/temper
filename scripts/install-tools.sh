@@ -107,7 +107,7 @@ install_apko() {
   require_linux apko
   echo "apko: installing v${APKO_VERSION} (checksum-pinned release tarball)"
   tmp=$(scratch)
-  curl -sSfL --retry 5 --retry-all-errors --retry-delay 5 -o "$tmp/apko.tgz" \
+  curl -sSfL --retry 10 --retry-all-errors --retry-delay 15 -o "$tmp/apko.tgz" \
     "https://github.com/chainguard-dev/apko/releases/download/v${APKO_VERSION}/apko_${APKO_VERSION}_linux_${goarch}.tar.gz"
   verify_sha "$tmp/apko.tgz" "$APKO_SHA256"
   tar -xzf "$tmp/apko.tgz" -C "$tmp"
@@ -120,7 +120,7 @@ install_melange() {
   require_linux melange
   echo "melange: installing v${MELANGE_VERSION} (checksum-pinned release tarball)"
   tmp=$(scratch)
-  curl -sSfL --retry 5 --retry-all-errors --retry-delay 5 -o "$tmp/melange.tgz" \
+  curl -sSfL --retry 10 --retry-all-errors --retry-delay 15 -o "$tmp/melange.tgz" \
     "https://github.com/chainguard-dev/melange/releases/download/v${MELANGE_VERSION}/melange_${MELANGE_VERSION}_linux_${goarch}.tar.gz"
   verify_sha "$tmp/melange.tgz" "$MELANGE_SHA256"
   tar -xzf "$tmp/melange.tgz" -C "$tmp"
@@ -133,7 +133,7 @@ install_cosign() {
   require_linux cosign
   echo "cosign: installing v${COSIGN_VERSION} (checksum-pinned release binary)"
   tmp="$(scratch)/cosign"
-  curl -sSfL --retry 5 --retry-all-errors --retry-delay 5 -o "$tmp" "https://github.com/sigstore/cosign/releases/download/v${COSIGN_VERSION}/cosign-linux-${goarch}"
+  curl -sSfL --retry 10 --retry-all-errors --retry-delay 15 -o "$tmp" "https://github.com/sigstore/cosign/releases/download/v${COSIGN_VERSION}/cosign-linux-${goarch}"
   verify_sha "$tmp" "$COSIGN_SHA256"
   install -m 0755 "$tmp" "$INSTALL_DIR/cosign"
   record_pin cosign "$COSIGN_SHA256"
@@ -144,7 +144,7 @@ install_crane() {
   require_linux crane
   echo "crane: installing v${CRANE_VERSION} (checksum-pinned release tarball)"
   tmp=$(scratch)
-  curl -sSfL --retry 5 --retry-all-errors --retry-delay 5 -o "$tmp/crane.tgz" \
+  curl -sSfL --retry 10 --retry-all-errors --retry-delay 15 -o "$tmp/crane.tgz" \
     "https://github.com/google/go-containerregistry/releases/download/v${CRANE_VERSION}/go-containerregistry_Linux_${unamearch}.tar.gz"
   verify_sha "$tmp/crane.tgz" "$CRANE_SHA256"
   tar -xzf "$tmp/crane.tgz" -C "$tmp" crane
@@ -157,7 +157,7 @@ install_grype() {
   require_linux grype
   echo "grype: installing v${GRYPE_VERSION} (checksum-pinned release tarball)"
   tmp=$(scratch)
-  curl -sSfL --retry 5 --retry-all-errors --retry-delay 5 -o "$tmp/grype.tgz" \
+  curl -sSfL --retry 10 --retry-all-errors --retry-delay 15 -o "$tmp/grype.tgz" \
     "https://github.com/anchore/grype/releases/download/v${GRYPE_VERSION}/grype_${GRYPE_VERSION}_linux_${goarch}.tar.gz"
   verify_sha "$tmp/grype.tgz" "$GRYPE_SHA256"
   tar -xzf "$tmp/grype.tgz" -C "$tmp" grype
@@ -170,7 +170,7 @@ install_syft() {
   require_linux syft
   echo "syft: installing v${SYFT_VERSION} (checksum-pinned release tarball)"
   tmp=$(scratch)
-  curl -sSfL --retry 5 --retry-all-errors --retry-delay 5 -o "$tmp/syft.tgz" \
+  curl -sSfL --retry 10 --retry-all-errors --retry-delay 15 -o "$tmp/syft.tgz" \
     "https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/syft_${SYFT_VERSION}_linux_${goarch}.tar.gz"
   verify_sha "$tmp/syft.tgz" "$SYFT_SHA256"
   tar -xzf "$tmp/syft.tgz" -C "$tmp" syft
@@ -189,7 +189,7 @@ install_trivy() {
   if already trivy "$tsha"; then echo "trivy: present ($("$INSTALL_DIR/trivy" --version 2>/dev/null | head -1)), skipping"; return; fi
   echo "trivy: installing v${TRIVY_VERSION} (checksum-pinned release tarball)"
   tmp=$(scratch)
-  curl -sSfL --retry 5 --retry-all-errors --retry-delay 5 -o "$tmp/trivy.tgz" \
+  curl -sSfL --retry 10 --retry-all-errors --retry-delay 15 -o "$tmp/trivy.tgz" \
     "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-${tarch}.tar.gz"
   verify_sha "$tmp/trivy.tgz" "$tsha"
   tar -xzf "$tmp/trivy.tgz" -C "$tmp" trivy

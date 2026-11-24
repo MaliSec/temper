@@ -5,8 +5,10 @@ and release another repository's images.
 
 ## Cutting a release
 
-`temper-nightly` releases `main` every night (02:17 UTC). To release by
-hand, push a date tag on a commit on `main`:
+`temper-nightly` releases `main` every night. It is scheduled for 02:17 UTC,
+but GitHub starts scheduled runs late under load, often by hours, and can
+skip one; `gh workflow run temper-nightly.yml --ref main` starts it by hand.
+To release by hand, push a date tag on a commit on `main`:
 
 ```sh
 git tag -s 2026.11.19 -m "Temper 2026.11.19"

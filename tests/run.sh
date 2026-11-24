@@ -417,7 +417,7 @@ grep -v '^\s*#' scripts/install-tools.sh | grep -qE 'curl[^|]*\|\s*sh' \
   || ok "no curl|sh installer in install-tools.sh"
 # A release runs dozens of jobs that each download the tools; one refused
 # download must not fail the release.
-[ -z "$(grep -E '^\s*curl ' scripts/install-tools.sh | grep -v -- '--retry 5 --retry-all-errors')" ] \
+[ -z "$(grep -E '^\s*curl ' scripts/install-tools.sh | grep -v -- '--retry 10 --retry-all-errors --retry-delay 15')" ] \
   && ok "every tool download in install-tools.sh retries" \
   || fail "a tool download in install-tools.sh does not retry"
 grep -E 'curl ' scripts/install-tools.sh | grep -q 'releases/download' \
