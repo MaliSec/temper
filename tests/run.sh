@@ -716,7 +716,7 @@ echo "{\"vulnerability\": \"CVE-1\", \"issue\": \"gh-1\", \"upstream\": [\"$sha\
 ./scripts/vex-check.sh "$vx" images >/dev/null 2>&1 && ok "vex-check accepts evidence that matches its statements" \
   || fail "vex-check refuses evidence that matches its statements"
 rm -f "$vx/evidence/CVE-1.json"
-grep -q 'scripts/vex-carry.sh' .github/workflows/temper-nightly.yml && grep -q 'git add images/ vex/' .github/workflows/temper-nightly.yml \
+grep -q 'scripts/vex-carry.sh' .github/workflows/temper-nightly.yml && grep -qF '"$message" images/ vex/' .github/workflows/temper-nightly.yml \
   && grep -q 'tests/vex-checks.sh' .github/workflows/temper-build.yml \
   && ok "the nightly relock carries VEX statements, and CI runs their checks" \
   || fail "the VEX carry or its checks are not wired into the nightly relock and CI"
@@ -731,6 +731,11 @@ step 'Merge the relock' | grep -qF 'if ! gh pr merge' && step 'Merge the relock'
   && ! step 'Tag main' | grep -q '^        if:' \
   && ok "a relock that cannot merge leaves tonight's release to main as it is" \
   || fail "a failed relock merge stops tonight's release"
+step 'Open or update the relock PR' | grep -qF 'scripts/signed-commit.sh' \
+  && step 'Open or update the relock PR' | grep -qF '.commit.verification.verified' \
+  && ! step 'Open or update the relock PR' | grep -qE 'git (commit|push)' \
+  && ok "the relock commit is made and signed by GitHub, and checked to be signed" \
+  || fail "the relock commit is pushed from the runner, unsigned, and its merge is blocked"
 step 'Check the Wolfi recipe mirror' | grep -qF 'repos/wolfi-dev/os/commits' && grep -qF 'cat /tmp/mirror.md' "$NW" \
   && ok "the nightly warns, in the relock PR too, when the Wolfi recipe mirror falls behind" \
   || fail "the nightly does not check the Wolfi recipe mirror"
