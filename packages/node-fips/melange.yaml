@@ -20,6 +20,15 @@ environment:
       - https://packages.wolfi.dev/os
     packages:
       - busybox=1.38.0-r3
+      # What the packages above pull in, pinned by scripts/pin-build-env.sh.
+      - ca-certificates-bundle=20261020-r1
+      - glibc-2.44-locale-posix=2.44-r25
+      - glibc-2.44=2.44-r25
+      - ld-linux-2.44=2.44-r25
+      - libcrypt1-2.44=2.44-r25
+      - libgcc=16.2.0-r5
+      - libxcrypt=4.5.2-r8
+      - wolfi-baselayout=20230201-r31
 
 pipeline:
   - name: Install
