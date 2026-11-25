@@ -12,17 +12,18 @@
 # The hand-written pins are kept; only the block after the marker is rewritten.
 # The scheduled relock does not change these pins. After a bump, run
 # ./scripts/build.sh --lock to relock the images that use the packages.
+# Acts on $TEMPER_PROJECT_DIR's packages (scripts/project.sh).
 set -euo pipefail
 
-cd "$(dirname "$0")/.."
-MARKER="      # What the packages above pull in, pinned by scripts/pin-build-env.sh."
-: "${ARCHS:=x86_64,aarch64}"
 from=""
 case "${1:-}" in
-  --from) from=${2:?--from needs a directory} ;;
+  --from) from=$(realpath -m "${2:?--from needs a directory}") ;;
   "") ;;
   *) echo "usage: $0 [--from DIR]" >&2; exit 2 ;;
 esac
+. "$(dirname "$0")/project.sh"
+MARKER="      # What the packages above pull in, pinned by scripts/pin-build-env.sh."
+: "${ARCHS:=x86_64,aarch64}"
 
 # rewrite <melange.yaml> <file of name=version lines>: replace the pinned block
 # of the top-level environment's package list (removed if the file is empty).
@@ -76,15 +77,14 @@ trap 'restore' EXIT
 trap 'exit 130' INT TERM
 if [ -z "$from" ]; then
   for r in "${recipes[@]}"; do rewrite "$r" "$empty"; done
-  ARCHS="$ARCHS" ./scripts/build.sh --packages
+  ARCHS="$ARCHS" "$TEMPER_HOME/scripts/build.sh" --packages
   from=packages
 fi
 
 for i in "${!recipes[@]}"; do
   r=${recipes[$i]}
-  name=$(awk '/^package:/{f=1} f && /^  name:/{print $2; exit}' "$r")
-  ver=$(awk '/^package:/{f=1} f && /^  version:/{print $2; exit}' "$r")
-  epoch=$(awk '/^package:/{f=1} f && /^  epoch:/{print $2; exit}' "$r")
+  field() { awk -v k="$1:" '/^package:/{f=1} f && /^  [a-z]/ && $1 == k {gsub(/"/, "", $2); print $2; exit}' "$r"; }
+  name=$(field name) ver=$(field version) epoch=$(field epoch)
   first="" envs=$(mktemp)
   for a in ${ARCHS//,/ }; do
     apk="$from/$a/$name-$ver-r$epoch.apk"
