@@ -328,10 +328,10 @@ printf 'package:\n  name: app\n  version: "1.0"\n  epoch: 0\nenvironment:\n  con
   > "$APPS/packages/app/melange.yaml"
 printf 'environment:\n  contents:\n    packages:\n      - build-base=1-r1\n      - glibc=2.44-r1\n' > "$TMP/pins/env/.melange.yaml"
 for a in x86_64 aarch64; do tar -czf "$TMP/pins/$a/app-1.0-r0.apk" -C "$TMP/pins/env" .melange.yaml; done
-before=$(git status --porcelain -- packages)
+before=$(cat packages/*/melange.yaml | sha256sum)
 (cd "$TMP" && env TEMPER_PROJECT_DIR="$APPS" "$TH/scripts/pin-build-env.sh" --from pins >/dev/null 2>&1) \
   && grep -qxF '      - glibc=2.44-r1' "$APPS/packages/app/melange.yaml" \
-  && [ "$(git status --porcelain -- packages)" = "$before" ] \
+  && [ "$(cat packages/*/melange.yaml | sha256sum)" = "$before" ] \
   && ok "pin-build-env pins TEMPER_PROJECT_DIR's packages, not Temper's" \
   || fail "pin-build-env did not pin the project's packages, or changed Temper's"
 echo '{"@context": "https://openvex.dev/ns/v0.2.0", "statements": []}' > "$APPS/vex/CVE-1.json"
