@@ -94,7 +94,9 @@ calling repository changes nothing.
   TEMPER_PROJECT_DIR=../temper-apps ./scripts/build.sh --lock
   ```
 
-- At least one package in `packages/<name>/melange.yaml`, and a `vex/`
+- At least one package in `packages/<name>/melange.yaml`, its build
+  environment pinned as Temper's are
+  (`TEMPER_PROJECT_DIR=../temper-apps ./scripts/pin-build-env.sh`), and a `vex/`
   directory (a `.gitkeep` is enough to start with).
 - The release workflow below, saved under the name in `release_workflow`.
 - A tag ruleset, like Temper's `tag-main`, that limits who can create,

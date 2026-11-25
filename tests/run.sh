@@ -323,6 +323,17 @@ out=$(apps "$TH/scripts/image-line.sh" app 2>&1) && [ -z "$out" ] \
   && ! apps "$TH/scripts/image-line.sh" node >/dev/null 2>&1 \
   && ok "the scripts act on TEMPER_PROJECT_DIR's images, not Temper's" \
   || fail "image-line read Temper's images for another project: $out"
+mkdir -p "$APPS/packages/app" "$TMP/pins/x86_64" "$TMP/pins/aarch64" "$TMP/pins/env"
+printf 'package:\n  name: app\n  version: "1.0"\n  epoch: 0\nenvironment:\n  contents:\n    packages:\n      - build-base=1-r1\npipeline: []\n' \
+  > "$APPS/packages/app/melange.yaml"
+printf 'environment:\n  contents:\n    packages:\n      - build-base=1-r1\n      - glibc=2.44-r1\n' > "$TMP/pins/env/.melange.yaml"
+for a in x86_64 aarch64; do tar -czf "$TMP/pins/$a/app-1.0-r0.apk" -C "$TMP/pins/env" .melange.yaml; done
+before=$(git status --porcelain -- packages)
+(cd "$TMP" && env TEMPER_PROJECT_DIR="$APPS" "$TH/scripts/pin-build-env.sh" --from pins >/dev/null 2>&1) \
+  && grep -qxF '      - glibc=2.44-r1' "$APPS/packages/app/melange.yaml" \
+  && [ "$(git status --porcelain -- packages)" = "$before" ] \
+  && ok "pin-build-env pins TEMPER_PROJECT_DIR's packages, not Temper's" \
+  || fail "pin-build-env did not pin the project's packages, or changed Temper's"
 echo '{"@context": "https://openvex.dev/ns/v0.2.0", "statements": []}' > "$APPS/vex/CVE-1.json"
 apps "$TH/scripts/vex-merge.sh" vex 2026.01.01 | jq -e '."@id" == "https://github.com/MaliSec/temper-apps/releases/tag/2026.01.01#vex"' >/dev/null \
   && ok "vex-merge names the project's own release" || fail "vex-merge named another repository's release"
