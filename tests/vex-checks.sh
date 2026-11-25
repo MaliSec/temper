@@ -9,6 +9,9 @@
 # affected and its check shows the image fixed: the fix has arrived, and
 # the statement needs review. Reports versions no statement covers yet.
 #
+# A .py check runs with the image's Python. A .c check is built in
+# base-glibc-dev and runs in the image against the image's own glibc.
+#
 # Usage: tests/vex-checks.sh <amd64|arm64>
 #   Images are <name>:local-<arch>, as temper-build loads them.
 set -euo pipefail
@@ -39,6 +42,18 @@ openssl x509 -req -in "$fx/wrong-name.csr" -CA "$fx/ca.pem" -CAkey "$fx/ca.key" 
     "subjectKeyIdentifier=hash" "authorityKeyIdentifier=keyid") 2>/dev/null
 chmod 755 "$fx"; chmod 644 "$fx"/*  # the images run as a non-root user
 
+# built <check.c>: the check built for this architecture, in $fx/bin.
+built() {
+  local out="$fx/bin/$(basename "$1" .c)"
+  if [ ! -x "$out" ]; then
+    mkdir -p "$fx/bin" && chmod 777 "$fx/bin"
+    docker run --rm --network none --platform "linux/$arch" -v "$PWD/tests/vex:/v:ro" -v "$fx/bin:/out" \
+      --entrypoint gcc "base-glibc-dev:local-$arch" -O1 -Wall -Wextra -Werror -o "/out/$(basename "$out")" "/v/$(basename "$1")" >&2 \
+      || return 1
+  fi
+  printf '%s\n' "$out"
+}
+
 shopt -s nullglob
 for ev in vex/evidence/*.json; do
   cve=$(jq -r .vulnerability "$ev")
@@ -61,9 +76,18 @@ for ev in vex/evidence/*.json; do
       docker image inspect "$image" >/dev/null 2>&1 \
         || { echo "FAIL $cve: $image ships $pkg $ver and is not loaded"; fails=$((fails + 1)); continue; }
       set +e
-      out=$(docker run --rm --network none --platform "linux/$arch" -v "$PWD/tests/vex:/v:ro" -v "$fx:/fixtures:ro" \
-        --entrypoint /usr/bin/python3 "$image" -I "/v/$(basename "$check")" /fixtures 2>&1)
-      rc=$?
+      case "$check" in
+        *.c)
+          if bin=$(built "$check"); then
+            out=$(docker run --rm --network none --platform "linux/$arch" -v "$fx/bin:/b:ro" \
+              --entrypoint "/b/$(basename "$bin")" "$image" 2>&1)
+            rc=$?
+          else out="building $check failed"; rc=2; fi ;;
+        *)
+          out=$(docker run --rm --network none --platform "linux/$arch" -v "$PWD/tests/vex:/v:ro" -v "$fx:/fixtures:ro" \
+            --entrypoint /usr/bin/python3 "$image" -I "/v/$(basename "$check")" /fixtures 2>&1)
+          rc=$? ;;
+      esac
       set -e
       runs=$((runs + 1))
       case "$rc" in
