@@ -114,15 +114,18 @@ each release, before publishing) and lists statements for package
 versions no image ships now.
 
 A statement can carry itself to new package versions. Give it evidence,
-`vex/evidence/<CVE>.json`: the upstream issue and fix commits, the status
-of each package line (with the commits that fix it, for `fixed`), and a
-check, `tests/vex/<CVE>.py`, that runs in the image and exits 0 when it is
-fixed and 1 when it is vulnerable. Then:
+`vex/evidence/<CVE>.json`: the upstream project (`cpython` or `glibc`), the
+issue (`gh-<number>` or `bz-<number>`) and fix commits, the status of each
+package line (with the commits that fix it, for `fixed`), and a check that
+exits 0 when the image is fixed and 1 when it is vulnerable:
+`tests/vex/<CVE>.py`, run with the image's Python, or for glibc
+`tests/vex/<CVE>.c`, built in `base-glibc-dev` and run in the image. Then:
 
 - the nightly relock (`scripts/vex-carry.sh`) extends the statement to a
   new version when Wolfi's recipe for that version shows the same status:
   for `fixed`, it builds a commit containing a fix commit or cherry-picks
-  one; for `affected`, nothing in its history mentions the issue;
+  one; for `affected`, nothing in its history mentions the issue; a
+  `not_affected` statement is always extended, and rests on the check;
 - CI (`tests/vex-checks.sh`) runs the check in every image that ships the
   package, on both architectures: a `fixed` or `not_affected` statement
   whose check shows the image vulnerable fails the build, and an

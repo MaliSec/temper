@@ -176,10 +176,13 @@ jobs:
           docker load < dist/rust-builder.tar
           tests/smoke-rust-builder.sh ${{ matrix.docker_arch }}
 
-      # Each VEX statement with evidence, checked in the images that ship its
-      # package (the python images, loaded above).
+      # Each VEX statement with evidence, checked in every image that ships
+      # its package; the glibc checks are built in base-glibc-dev.
       - name: VEX checks
-        run: tests/vex-checks.sh ${{ matrix.docker_arch }}
+        run: |
+          set -euo pipefail
+          for tar in dist/*.tar; do docker load -q < "$tar"; done
+          tests/vex-checks.sh ${{ matrix.docker_arch }}
 
       # The images above are loaded, so the suite's smoke cases run too.
       - name: Repository tests

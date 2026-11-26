@@ -13,7 +13,9 @@
 # Also fails on evidence (vex/evidence/<CVE>.json, read by vex-carry.sh and
 # tests/vex-checks.sh) that does not match its statements: a line whose
 # status differs from the statements for that package, a fixed line without
-# fix commits, a commit that is not a full SHA, or a missing check script.
+# fix commits, a commit that is not a full SHA, an unknown project, an issue
+# not in the project's form (cpython: gh-<number>, glibc: bz-<number>), or a
+# missing check script (.py, or .c for glibc).
 #
 # Reports, without failing, a statement whose package version no image of
 # that repository ships any more. Keep it: it still covers the releases
@@ -106,10 +108,17 @@ for e in "${evidence[@]}"; do
   [ -f "$VEX_DIR/$vuln.json" ] || { fail "$e: no statements in $VEX_DIR/$vuln.json"; continue; }
   check=$(jq -r '.check // ""' "$e")
   [ -n "$check" ] && [ -f "$check" ] || fail "$e: check ${check:-(none)} does not exist"
+  case "$(jq -r '.project // ""' "$e"):$check" in
+    cpython:*.py|glibc:*.c) ;;
+    *) fail "$e: project $(jq -r '.project // "(none)"' "$e") with check $check (cpython: .py, glibc: .c)" ;;
+  esac
   problems=$(jq -r --arg v "$vuln" --slurpfile doc "$VEX_DIR/$vuln.json" '
     def sha: type == "string" and test("^[0-9a-f]{40}$");
     [ (if .vulnerability != $v then "names \(.vulnerability), not \($v)" else empty end),
-      (if (.issue // "" | test("^gh-[0-9]+$")) | not then "issue is not gh-<number>" else empty end),
+      ({cpython: "gh", glibc: "bz"}[.project // ""] as $pre |
+        if $pre == null then "project is not cpython or glibc"
+        elif (.issue // "" | test("^" + $pre + "-[0-9]+$")) | not then "issue is not \($pre)-<number>"
+        else empty end),
       (if ((.upstream // []) | length) == 0 or any(.upstream[]; sha | not) then "upstream must list full commit SHAs" else empty end),
       (if ((.lines // {}) | length) == 0 then "no lines" else empty end),
       (.lines // {} | to_entries[] | .key as $pkg | .value as $l |

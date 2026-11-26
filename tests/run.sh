@@ -718,14 +718,31 @@ evid() { # evid <label> <evidence json>
   expect_fail "vex-check refuses evidence with $1" ./scripts/vex-check.sh "$vx" images
 }
 sha=0123456789abcdef0123456789abcdef01234567
-evid "another status than its statement" "{\"vulnerability\": \"CVE-1\", \"issue\": \"gh-1\", \"upstream\": [\"$sha\"], \"check\": \"tests/vex/CVE-2026-16052.py\", \"lines\": {\"glibc-2.44\": {\"status\": \"fixed\", \"fix\": [\"$sha\"]}}}"
-evid "a fixed line without fix commits" "{\"vulnerability\": \"CVE-1\", \"issue\": \"gh-1\", \"upstream\": [\"$sha\"], \"check\": \"tests/vex/CVE-2026-16052.py\", \"lines\": {\"glibc-2.44\": {\"status\": \"fixed\", \"fix\": []}}}"
-evid "a short commit" "{\"vulnerability\": \"CVE-1\", \"issue\": \"gh-1\", \"upstream\": [\"0123456\"], \"check\": \"tests/vex/CVE-2026-16052.py\", \"lines\": {\"glibc-2.44\": {\"status\": \"affected\", \"fix\": []}}}"
-evid "a missing check" "{\"vulnerability\": \"CVE-1\", \"issue\": \"gh-1\", \"upstream\": [\"$sha\"], \"check\": \"tests/vex/none.py\", \"lines\": {\"glibc-2.44\": {\"status\": \"affected\", \"fix\": []}}}"
-evid "a package no statement names" "{\"vulnerability\": \"CVE-1\", \"issue\": \"gh-1\", \"upstream\": [\"$sha\"], \"check\": \"tests/vex/CVE-2026-16052.py\", \"lines\": {\"zlib\": {\"status\": \"affected\", \"fix\": []}}}"
-echo "{\"vulnerability\": \"CVE-1\", \"issue\": \"gh-1\", \"upstream\": [\"$sha\"], \"check\": \"tests/vex/CVE-2026-16052.py\", \"lines\": {\"glibc-2.44\": {\"status\": \"affected\", \"fix\": []}}}" > "$vx/evidence/CVE-1.json"
-./scripts/vex-check.sh "$vx" images >/dev/null 2>&1 && ok "vex-check accepts evidence that matches its statements" \
-  || fail "vex-check refuses evidence that matches its statements"
+# good <project>: evidence that matches the affected statement above.
+good() {
+  case "$1" in
+    glibc) jq -nc --arg s "$sha" '{vulnerability: "CVE-1", project: "glibc", issue: "bz-1", upstream: [$s],
+      check: "tests/vex/CVE-2026-121758.c", lines: {"glibc-2.44": {status: "affected", fix: []}}}' ;;
+    cpython) jq -nc --arg s "$sha" '{vulnerability: "CVE-1", project: "cpython", issue: "gh-1", upstream: [$s],
+      check: "tests/vex/CVE-2026-16052.py", lines: {"glibc-2.44": {status: "affected", fix: []}}}' ;;
+  esac
+}
+evid "another status than its statement" "$(good glibc | jq -c --arg s "$sha" '.lines["glibc-2.44"] = {status: "fixed", fix: [$s]}')"
+evid "a fixed line without fix commits" "$(good glibc | jq -c '.lines["glibc-2.44"].status = "fixed"')"
+evid "a short commit" "$(good glibc | jq -c '.upstream = ["0123456"]')"
+evid "a missing check" "$(good glibc | jq -c '.check = "tests/vex/none.c"')"
+evid "a package no statement names" "$(good glibc | jq -c '.lines = {zlib: .lines["glibc-2.44"]}')"
+evid "no project" "$(good glibc | jq -c 'del(.project)')"
+evid "an unknown project" "$(good glibc | jq -c '.project = "openssl"')"
+evid "a glibc issue that is not bz-<number>" "$(good glibc | jq -c '.issue = "gh-1"')"
+evid "a cpython issue that is not gh-<number>" "$(good cpython | jq -c '.issue = "bz-1"')"
+evid "a glibc check that is not C" "$(good glibc | jq -c '.check = "tests/vex/CVE-2026-16052.py"')"
+evid "a cpython check that is not Python" "$(good cpython | jq -c '.check = "tests/vex/CVE-2026-121758.c"')"
+for proj in glibc cpython; do
+  good "$proj" > "$vx/evidence/CVE-1.json"
+  ./scripts/vex-check.sh "$vx" images >/dev/null 2>&1 && ok "vex-check accepts $proj evidence that matches its statements" \
+    || fail "vex-check refuses $proj evidence that matches its statements"
+done
 rm -f "$vx/evidence/CVE-1.json"
 grep -q 'scripts/vex-carry.sh' .github/workflows/temper-nightly.yml && grep -qF '"$message" images/ vex/' .github/workflows/temper-nightly.yml \
   && grep -q 'tests/vex-checks.sh' .github/workflows/temper-build.yml \
@@ -764,9 +781,12 @@ step 'Check the Wolfi recipe mirror' | grep -qF 'repos/wolfi-dev/os/commits' && 
 bad=""
 for ev in vex/evidence/*.json; do
   c=$(jq -r .check "$ev")
-  python3 -I -c 'import ast,sys; ast.parse(open(sys.argv[1]).read())' "$c" 2>/dev/null || bad="$bad $c"
+  case "$c" in
+    *.py) python3 -I -c 'import ast,sys; ast.parse(open(sys.argv[1]).read())' "$c" 2>/dev/null || bad="$bad $c" ;;
+    *.c) gcc -fsyntax-only -Wall -Wextra -Werror "$c" 2>/dev/null || bad="$bad $c" ;;
+  esac
 done
-[ -z "$bad" ] && ok "every VEX check is valid Python" || fail "VEX checks that are not valid Python:$bad"
+[ -z "$bad" ] && ok "every VEX check is valid Python or C" || fail "VEX checks that do not parse or compile:$bad"
 
 echo "== rollback-latest.sh: fail-closed interfaces =="
 expect_fail "rollback without a tag fails" ./scripts/rollback-latest.sh
