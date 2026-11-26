@@ -484,25 +484,6 @@
         "checksum": "Q1K2OseD9t6ppqlc+tsS42nAht2aU="
       },
       {
-        "name": "libpsl",
-        "url": "https://packages.wolfi.dev/os/x86_64/libpsl-0.23.3-r5.apk",
-        "version": "0.23.3-r5",
-        "architecture": "x86_64",
-        "signature": {
-          "range": "",
-          "checksum": ""
-        },
-        "control": {
-          "range": "bytes=0-18600",
-          "checksum": "sha1-Z084/NImz12lW2cDE0J8Td/nF0M="
-        },
-        "data": {
-          "range": "bytes=18601-84283",
-          "checksum": "sha256-LFSG7KReWcB6Z9ZzTZkwV/olCu1MN0KbbJXYwcwTA8Y="
-        },
-        "checksum": "Q1Z084/NImz12lW2cDE0J8Td/nF0M="
-      },
-      {
         "name": "gdbm",
         "url": "https://packages.wolfi.dev/os/x86_64/gdbm-1.26-r10.apk",
         "version": "1.26-r10",
@@ -710,6 +691,25 @@
           "checksum": "sha256-9RVg0XZpOJ78l4ec5o6CZATKaeh25UUkgnMuwTUysvU="
         },
         "checksum": "Q1JYCyKsvjV0r2OBUqKDgD/7GXuP4="
+      },
+      {
+        "name": "libpsl",
+        "url": "https://packages.wolfi.dev/os/x86_64/libpsl-0.23.3-r5.apk",
+        "version": "0.23.3-r5",
+        "architecture": "x86_64",
+        "signature": {
+          "range": "",
+          "checksum": ""
+        },
+        "control": {
+          "range": "bytes=0-18600",
+          "checksum": "sha1-Z084/NImz12lW2cDE0J8Td/nF0M="
+        },
+        "data": {
+          "range": "bytes=18601-84283",
+          "checksum": "sha256-LFSG7KReWcB6Z9ZzTZkwV/olCu1MN0KbbJXYwcwTA8Y="
+        },
+        "checksum": "Q1Z084/NImz12lW2cDE0J8Td/nF0M="
       },
       {
         "name": "ngtcp2",
@@ -1320,25 +1320,6 @@
         "checksum": "Q1ko03jDPP07yS8magpU7XTIWx0ow="
       },
       {
-        "name": "libpsl",
-        "url": "https://packages.wolfi.dev/os/aarch64/libpsl-0.23.3-r5.apk",
-        "version": "0.23.3-r5",
-        "architecture": "aarch64",
-        "signature": {
-          "range": "",
-          "checksum": ""
-        },
-        "control": {
-          "range": "bytes=0-18651",
-          "checksum": "sha1-mkGYdeNkBNmC3U2SSrdWIDQVKqQ="
-        },
-        "data": {
-          "range": "bytes=18652-83601",
-          "checksum": "sha256-SZh5XvguLjLsMuVNnHH7RtkEi59emj2B6kha1jVOyuw="
-        },
-        "checksum": "Q1mkGYdeNkBNmC3U2SSrdWIDQVKqQ="
-      },
-      {
         "name": "gdbm",
         "url": "https://packages.wolfi.dev/os/aarch64/gdbm-1.26-r10.apk",
         "version": "1.26-r10",
@@ -1546,6 +1527,25 @@
           "checksum": "sha256-pA1tl2wZC3bJvxdQsGiPSpuiAHdN7gdUd3gjJttZcIA="
         },
         "checksum": "Q1RB0sg+BPfUfW5vzeRBOb3xzZhLA="
+      },
+      {
+        "name": "libpsl",
+        "url": "https://packages.wolfi.dev/os/aarch64/libpsl-0.23.3-r5.apk",
+        "version": "0.23.3-r5",
+        "architecture": "aarch64",
+        "signature": {
+          "range": "",
+          "checksum": ""
+        },
+        "control": {
+          "range": "bytes=0-18651",
+          "checksum": "sha1-mkGYdeNkBNmC3U2SSrdWIDQVKqQ="
+        },
+        "data": {
+          "range": "bytes=18652-83601",
+          "checksum": "sha256-SZh5XvguLjLsMuVNnHH7RtkEi59emj2B6kha1jVOyuw="
+        },
+        "checksum": "Q1mkGYdeNkBNmC3U2SSrdWIDQVKqQ="
       },
       {
         "name": "ngtcp2",
