@@ -666,6 +666,12 @@ if out=$(IMAGES_DIR="$sj/images" ./scripts/scans-json.sh "$sj/records.json" "$sj
         = '[["CVE-1:fixed","CVE-2:-"],["CVE-1:fixed"]]' ]; then
   ok "scans-json marks a finding with the statement for its vulnerability, image and exact package version"
 else fail "scans-json applied VEX statements to the wrong findings"; fi
+head -c 200000 /dev/zero | tr '\0' x > "$sj/notes.txt"
+jq -c --rawfile n "$sj/notes.txt" '.statements[0].status_notes = $n' "$sj/vex.json" > "$sj/vex-large.json"
+if out=$(IMAGES_DIR="$sj/images" ./scripts/scans-json.sh "$sj/records.json" "$sj/scan" 2026.01.01 "$sj/vex-large.json" 2>/dev/null) \
+   && [ "$(jq '[.images.app.platforms.amd64[][]? | .vex.status_notes // "" | length] | max' <<<"$out")" = 200000 ]; then
+  ok "scans-json writes findings larger than one command-line argument"
+else fail "scans-json fails once the findings outgrow one command-line argument"; fi
 grep -q 'vex-check.sh" vex images' scripts/cut-registry.sh && grep -q 'vex_sha256' scripts/cut-registry.sh \
   && grep -q '${PROJECT_NAME}-${DATE}.vex.json' .github/actions/release/action.yml \
   && ok "the release checks the VEX statements, records the VEX file's sha256 and attaches it" \
