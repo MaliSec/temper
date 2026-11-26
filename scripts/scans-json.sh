@@ -26,15 +26,19 @@ IMAGES_DIR=${IMAGES_DIR:+$(realpath -m "$IMAGES_DIR")}
 IMAGES_DIR=${IMAGES_DIR:-images}
 REGISTRY_REPO=$PROJECT_IMAGES
 [ -f "$IMAGES_JSON" ] || { echo "scans-json: $IMAGES_JSON missing" >&2; exit 1; }
-vex_doc='{"statements": []}'
+# Documents go to jq as files: one command-line argument is limited to
+# 128 KiB, and the findings outgrow it.
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+echo '{"statements": []}' > "$work/vex.json"
 if [ -n "$VEX" ]; then
-  vex_doc=$(jq -c . "$VEX") || { echo "scans-json: $VEX is not valid JSON" >&2; exit 1; }
+  jq -c . "$VEX" > "$work/vex.json" || { echo "scans-json: $VEX is not valid JSON" >&2; exit 1; }
 fi
 
 # The statement covering a finding, if any: same vulnerability (or one of
 # its aliases), the image's repository, and the finding's Wolfi package at
 # its exact version.
-with_vex='map(. as $f
+with_vex='$vexes[0] as $vex | map(. as $f
   | ("pkg:oci/" + $repo + "?repository_url=" + $registry + "/" + $repo) as $product
   | ("pkg:apk/wolfi/" + $f.package.name + "@" + $f.package.version) as $sub
   | ([$f.id] + ($f.related // [])) as $ids
@@ -64,10 +68,10 @@ trivy_findings='[.Results[]? as $r | $r.Vulnerabilities[]? | {
   fixed_in: ((.FixedVersion // "") | split(", ") | map(select(. != "")))
 }] | sort_by(.id, .package.name)'
 
-images='{}'
+echo '{}' > "$work/images.json"
 grype_version='' trivy_version=''
 while read -r name digest; do
-  plats='{}'
+  echo '{}' > "$work/plats.json"
   while read -r arch pdigest; do
     g="$SCAN_DIR/${name}.${arch}.grype.json"
     t="$SCAN_DIR/${name}.${arch}.trivy.json"
@@ -86,18 +90,20 @@ while read -r name digest; do
       [ "$want" = "$got" ] || { echo "scans-json: $name/$arch $tool lists $got findings, the gate counted $want" >&2; exit 1; }
     done
     repo=$name; [ ! -f "$IMAGES_DIR/$name/repo" ] || repo=$(tr -d '[:space:]' < "$IMAGES_DIR/$name/repo")
-    gf=$(jq -c --arg repo "$repo" --arg registry "$REGISTRY_REPO" --argjson vex "$vex_doc" "$with_vex" <<<"$gf")
-    tf=$(jq -c --arg repo "$repo" --arg registry "$REGISTRY_REPO" --argjson vex "$vex_doc" "$with_vex" <<<"$tf")
-    plats=$(jq -c --arg arch "$arch" --arg d "$pdigest" --argjson g "$gf" --argjson t "$tf" \
-      '. + {($arch): {digest: $d, grype: $g, trivy: $t}}' <<<"$plats")
+    jq -c --arg repo "$repo" --arg registry "$REGISTRY_REPO" --slurpfile vexes "$work/vex.json" "$with_vex" <<<"$gf" > "$work/g.json"
+    jq -c --arg repo "$repo" --arg registry "$REGISTRY_REPO" --slurpfile vexes "$work/vex.json" "$with_vex" <<<"$tf" > "$work/t.json"
+    jq -c --arg arch "$arch" --arg d "$pdigest" --slurpfile g "$work/g.json" --slurpfile t "$work/t.json" \
+      '. + {($arch): {digest: $d, grype: $g[0], trivy: $t[0]}}' "$work/plats.json" > "$work/next.json"
+    mv "$work/next.json" "$work/plats.json"
   done < <(jq -r --arg n "$name" '.images[] | select(.name == $n) | .platforms[] | "\(.arch) \(.digest)"' "$IMAGES_JSON")
-  images=$(jq -c --arg n "$name" --arg d "$digest" --argjson p "$plats" \
-    '. + {($n): {digest: $d, platforms: $p}}' <<<"$images")
+  jq -c --arg n "$name" --arg d "$digest" --slurpfile p "$work/plats.json" \
+    '. + {($n): {digest: $d, platforms: $p[0]}}' "$work/images.json" > "$work/next.json"
+  mv "$work/next.json" "$work/images.json"
 done < <(jq -r '.images[] | "\(.name) \(.digest)"' "$IMAGES_JSON")
 
 jq -n --arg release "$RELEASE" --arg gv "$grype_version" --arg tv "$trivy_version" \
   --arg gdb "$(jq -r .scan_db "$IMAGES_JSON")" --arg tdb "$(jq -r .scan_db_trivy "$IMAGES_JSON")" \
-  --argjson images "$images" \
+  --slurpfile images "$work/images.json" \
   '{schema: 2, release: $release,
     scanners: {grype: {version: $gv, db: $gdb}, trivy: {version: $tv, db: $tdb}},
-    images: $images}'
+    images: $images[0]}'
